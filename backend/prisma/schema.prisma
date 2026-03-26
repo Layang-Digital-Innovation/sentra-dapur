@@ -1,0 +1,1271 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+// NEW: Product images (cover and previews)
+model ProductImage {
+  id           String   @id @default(uuid())
+  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId    String
+  url          String
+  filename     String
+  originalName String
+  size         Int
+  mimeType     String
+  isCover      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([productId])
+  @@index([productId, isCover])
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String        @id @default(uuid())
+  email        String        @unique
+  fullname     String        @default("")
+  password     String
+  whatsapp     String?
+  role         Role
+  kycDocs      String?
+  subscription Subscription?
+  projects     Project[]     @relation("OwnerProjects")
+  investments  Investment[]  @relation("InvestorInvestments")
+  products     Product[]     @relation("SellerProducts")
+  orders       Order[]       @relation("BuyerOrders")
+  payments     Payment[]
+
+  // Investment dividend relations
+  dividends DividendDistribution[] @relation("InvestorDividends")
+
+  // NEW: Sentra Dapur SPPG relations
+  dapurOwned          DapurUnit[]     @relation("ProjectOwnerDapur")
+  dapurManagedCentral DapurUnit[]     @relation("AdminPusatDapur")
+  dapurManagedLocal   DapurUnit[]     @relation("AdminDapurUnit")
+  dapurInvestments    DapurInvestor[]
+  arusKasReported     ArusKas[]       @relation("ReportedBy")
+  arusKasApproved     ArusKas[]       @relation("ApprovedBy")
+  stokUpdated         Stok[]
+  poCreated           PurchaseOrder[] @relation("POCreated")
+  poApproved          PurchaseOrder[] @relation("POApproved")
+
+  // IMPROVED: Single relation for chat participants
+  chatParticipants ChatParticipant[]
+
+  // IMPROVED: Single relation for messages sent
+  sentMessages Message[]
+  
+  loadingGoodsProduced LoadingGood[] @relation("ReceivedBy")
+
+  // NEW: Back relation for Enterprise Label investors
+  labelInvestors LabelInvestor[]
+
+  // Notification relations
+  notifications Notification[]
+
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  SellerProfile SellerProfile?
+
+  // Micro Investment Private Sub-Ledger
+  microInvestors      MicroInvestor[] @relation("MicroParent")
+  microInvestorUser   MicroInvestor? @relation("MicroUser")
+  wallets             InvestorWallet?
+  microDividends      MicroDividend[] @relation("InvestorMicroDividends")
+
+  // Dapur Dividend relations
+  reportedDapurDividends DapurDividend[] @relation("DapurDividendReporter")
+  dapurDividendReceipts  DapurDividendDistribution[] @relation("DapurDividendRecipient")
+
+  // Cashback reporter
+  reportedCashbacks      DapurCashback[] @relation("CashbackReporter")
+}
+
+model Project {
+  id            String        @id @default(uuid())
+  title         String
+  description   String
+  status        ProjectStatus @default(PENDING)
+  owner         User          @relation("OwnerProjects", fields: [ownerId], references: [id])
+  ownerId       String
+  investments   Investment[]
+  reports       Report[]
+  dividends     Dividend[]
+  financialDocs Json?
+
+  // Investment targets and amounts
+  targetAmount  Float? // Target funding amount
+  currentAmount Float  @default(0) // Current funded amount
+  minInvestment Float? // Minimum allowed investment amount
+
+  // Profit sharing information
+  profitSharingPercentage         Float? // Percentage of profit shared with investors
+  profitSharingPercentageAfterBEP Float? // Percentage of profit shared with investors after BEP
+
+  // Prospectus/Proposal document
+  prospectusUrl      String? // URL to the uploaded prospectus file
+  prospectusFileName String? // Original filename of the prospectus
+
+  // Project deadline
+  deadline DateTime?
+
+  // Bank details for investment transfers
+  bankName      String?
+  accountNumber String?
+  accountHolder String?
+
+  // Chat relation
+  chats Chat[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Investment {
+  id         String           @id @default(uuid())
+  amount     Float
+  status     InvestmentStatus @default(PENDING)
+  investor   User             @relation("InvestorInvestments", fields: [investorId], references: [id])
+  investorId String
+  project    Project          @relation(fields: [projectId], references: [id])
+  projectId  String
+
+  // Transfer proof and approval workflow
+  transferProofUrl      String?
+  transferProofFileName String?
+  transferDate          DateTime?
+
+  // Admin approval
+  approvedBy     String?
+  approvedAt     DateTime?
+  rejectedReason String?
+
+  // Chat reference for communication
+  chatId String?
+
+  // Dividend distributions
+  dividendDistributions DividendDistribution[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([investorId])
+  @@index([projectId])
+  @@index([status])
+}
+
+model Report {
+  id        String     @id @default(uuid())
+  type      ReportType
+  fileUrl   String
+  project   Project    @relation(fields: [projectId], references: [id])
+  projectId String
+  createdAt DateTime   @default(now())
+}
+
+model Dividend {
+  id        String   @id @default(uuid())
+  amount    Float
+  date      DateTime
+  project   Project  @relation(fields: [projectId], references: [id])
+  projectId String
+
+  // Individual dividend distributions
+  distributions DividendDistribution[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model DividendDistribution {
+  id         String         @id @default(uuid())
+  amount     Float
+  percentage Float // Percentage of total dividend
+  status     DividendStatus @default(PENDING)
+
+  // Relations
+  dividend     Dividend   @relation(fields: [dividendId], references: [id])
+  dividendId   String
+  investor     User       @relation("InvestorDividends", fields: [investorId], references: [id])
+  investorId   String
+  investment   Investment @relation(fields: [investmentId], references: [id])
+  investmentId String
+
+  // Payment tracking
+  paidAt       DateTime?
+  paymentProof String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([dividendId])
+  @@index([investorId])
+  @@index([investmentId])
+}
+
+model Product {
+  id          String         @id @default(uuid())
+  name        String
+  description String
+  // Multi-currency pricing via related ProductPrice rows
+  prices      ProductPrice[]
+  // TEMP: keep legacy scalar fields during migration to backfill new structures
+  price       Float?
+  currency    String?
+  unit        String
+  weight      Float
+  volume      String
+  seller        User           @relation("SellerProducts", fields: [sellerId], references: [id])
+  sellerId    String
+  orders      Order[]
+  createdAt   DateTime       @default(now())
+  // Listing moderation and pricing metadata
+  status      ProductStatus  @default(PENDING)
+  approvedBy  String?
+  approvedAt  DateTime?
+  priceType   PriceType      @default(EXW)
+  // Images
+  images      ProductImage[]
+  
+  // PO relation
+  poItems     POItem[]
+}
+
+// NEW: Price per currency for products
+model ProductPrice {
+  id        String   @id @default(uuid())
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+  currency  Currency
+  price     Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([productId, currency])
+  @@index([productId])
+}
+
+model Order {
+  id           String      @id @default(uuid())
+  product      Product     @relation(fields: [productId], references: [id])
+  productId    String
+  buyer        User        @relation("BuyerOrders", fields: [buyerId], references: [id])
+  buyerId      String
+  quantity     Int
+  notes        String?
+  // Selected currency and captured pricing at order time
+  currency     Currency    @default(IDR)
+  pricePerUnit Float       @default(0)
+  totalPrice   Float       @default(0)
+  status       OrderStatus @default(PENDING)
+  shipment     Shipment?
+  createdAt    DateTime    @default(now())
+}
+
+model Shipment {
+  id             String         @id @default(uuid())
+  method         ShipmentMethod
+  status         ShipmentStatus @default(PENDING)
+  order          Order          @relation(fields: [orderId], references: [id])
+  orderId        String         @unique
+  createdAt      DateTime       @default(now())
+  // Tracking enhancements
+  carrier        String?
+  trackingNumber String?
+  trackingUrl    String?
+  updatedAt      DateTime       @updatedAt
+
+  // Sea freight enhancements
+  seaPricingMode SeaPricingMode?
+  cbmVolume      Float? // CBM volume when pricing by CBM
+  containerType  ContainerType? // 20ft / 40ft when pricing by container
+  freightCost    Float? // Optional quoted freight cost
+  currency       Currency?       @default(USD)
+}
+
+// IMPROVED: Enhanced Subscription model with better tracking
+model Subscription {
+  id                 String             @id @default(uuid())
+  user               User               @relation(fields: [userId], references: [id])
+  userId             String             @unique
+  status             SubscriptionStatus @default(TRIAL)
+  plan               SubscriptionPlan   @default(TRIAL)
+  startedAt          DateTime           @default(now())
+  expiresAt          DateTime?
+  trialEndsAt        DateTime?
+  cancelledAt        DateTime?
+  pausedAt           DateTime?
+  renewalDate        DateTime?
+  autoRenew          Boolean            @default(true)
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  payments           Payment[]
+  // Enterprise Custom support
+  label              EnterpriseLabel?   @relation(fields: [labelId], references: [id])
+  labelId            String?
+  customPrice        Float?
+  // Use enum for currency
+  customCurrency     Currency           @default(IDR)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+}
+
+// IMPROVED: Enhanced Payment model with better subscription integration
+model Payment {
+  id             String           @id @default(uuid())
+  user           User             @relation(fields: [userId], references: [id])
+  userId         String
+  provider       PaymentProvider
+  amount         Float
+  // Use enum for currency
+  currency       Currency         @default(IDR)
+  status         PaymentStatus    @default(PENDING)
+  paymentType    PaymentType      @default(ONE_TIME) // Added: Payment type
+  paymentLink    String?
+  externalId     String? // For provider's transaction/plan ID
+  subscription   Subscription?    @relation(fields: [subscriptionId], references: [id])
+  subscriptionId String?
+  // Link payment to Enterprise Label (organization-level billing)
+  label          EnterpriseLabel? @relation(fields: [labelId], references: [id])
+  labelId        String?
+
+  // Enhanced metadata fields
+  metadata      Json? // General metadata
+  providerData  Json? // Raw data from payment provider
+  webhookData   Json? // Webhook payload data
+  failureReason String? // Added: Reason for failed payments
+
+  // Timing fields
+  paidAt    DateTime? // Added: When payment was completed
+  failedAt  DateTime? // Added: When payment failed
+  expiredAt DateTime? // Added: When payment link expired
+
+  // Additional tracking
+  description   String? // Added: Payment description
+  invoiceNumber String? // Added: Invoice number for accounting
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([subscriptionId])
+  @@index([externalId])
+  @@index([status])
+  @@index([labelId])
+  @@index([currency])
+}
+
+// ADDED: Subscription history for audit trail
+model SubscriptionHistory {
+  id             String              @id @default(uuid())
+  subscriptionId String
+  action         SubscriptionAction
+  oldStatus      SubscriptionStatus?
+  newStatus      SubscriptionStatus?
+  oldPlan        SubscriptionPlan?
+  newPlan        SubscriptionPlan?
+  reason         String?
+  metadata       Json?
+  createdAt      DateTime            @default(now())
+
+  @@index([subscriptionId])
+}
+
+// ADDED: Webhook events log for debugging
+model WebhookLog {
+  id           String          @id @default(uuid())
+  provider     PaymentProvider
+  eventType    String
+  eventId      String? // Provider's event ID
+  payload      Json
+  processed    Boolean         @default(false)
+  processedAt  DateTime?
+  errorMessage String?
+  retryCount   Int             @default(0)
+  createdAt    DateTime        @default(now())
+
+  @@index([provider, eventType])
+  @@index([processed])
+}
+
+enum Role {
+  INVESTOR
+  PROJECT_OWNER
+  ADMIN_PUSAT
+  ADMIN_DAPUR
+  PRODUKSI
+  BUYER
+  SUPPLIER
+  ADMIN
+  ADMIN_INVESTMENT
+  ADMIN_TRADING
+  SUPER_ADMIN
+  MICRO_INVESTOR
+}
+
+enum ProjectStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ONGOING
+  COMPLETED
+  CLOSED
+}
+
+enum InvestmentStatus {
+  PENDING // Initial state when investment is created
+  TRANSFER_PENDING // Waiting for transfer proof upload
+  TRANSFER_UPLOADED // Transfer proof uploaded, waiting for admin approval
+  APPROVED // Admin approved the investment
+  REJECTED // Admin rejected the investment
+  ACTIVE // Investment is active and investor has access
+}
+
+enum DividendStatus {
+  PENDING // Dividend calculated but not yet paid
+  PAID // Dividend has been paid to investor
+  CANCELLED // Dividend payment cancelled
+}
+
+enum ReportType {
+  INCOME_STATEMENT
+  BALANCE_SHEET
+  CASH_FLOW
+  BANK_STATEMENT
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  SHIPPED
+  COMPLETED
+  CANCELLED
+}
+
+enum ShipmentMethod {
+  AIR
+  SEA
+  EXPRESS
+}
+
+// Pricing mode for Sea Freight
+enum SeaPricingMode {
+  CBM
+  CONTAINER
+}
+
+// Container size for Sea Freight container pricing
+enum ContainerType {
+  FT20
+  FT40
+}
+
+enum ShipmentStatus {
+  PENDING
+  IN_TRANSIT
+  DELIVERED
+}
+
+// NEW: Product listing moderation status
+enum ProductStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// NEW: Pricing type for marketplace listings
+enum PriceType {
+  EXW // Ex-Works (harga di gudang)
+  WAREHOUSE // generic warehouse pricing
+}
+
+// IMPROVED: Enhanced subscription status
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAUSED // Added: For temporarily paused subscriptions
+  PAST_DUE // Added: When payment fails but subscription is still active
+  CANCELLED // Added: User cancelled but still has access until period ends
+  EXPIRED
+}
+
+// NEW: Enterprise Label for custom subscriptions
+model EnterpriseLabel {
+  id             String          @id @default(uuid())
+  name           String
+  code           String          @unique
+  contactEmail   String?
+  defaultPrice   Float?
+  currency       Currency?       @default(IDR)
+  description    String?
+  metadata       Json?
+  subscriptions  Subscription[]
+  // NEW: Investor associations
+  labelInvestors LabelInvestor[]
+  // Back-relation to payments (organization-level billing)
+  payments       Payment[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+// NEW: Junction table between EnterpriseLabel and User (investor)
+model LabelInvestor {
+  id        String          @id @default(uuid())
+  label     EnterpriseLabel @relation(fields: [labelId], references: [id], onDelete: Cascade)
+  labelId   String
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@unique([labelId, userId])
+  @@index([labelId])
+  @@index([userId])
+}
+
+enum SubscriptionPlan {
+  TRIAL
+  GOLD_MONTHLY
+  GOLD_YEARLY
+  ENTERPRISE_CUSTOM
+}
+
+enum PaymentProvider {
+  PAYPAL
+  XENDIT
+  MANUAL
+}
+
+enum BillingPeriod {
+  MONTHLY
+  YEARLY
+}
+
+model BillingPlan {
+  id             String           @id @default(uuid())
+  provider       PaymentProvider
+  providerPlanId String?          @unique
+  plan           SubscriptionPlan
+  name           String?
+  description    String?
+  price          Float
+  currency       Currency         @default(USD)
+  period         BillingPeriod    @default(MONTHLY)
+  status         String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@unique([provider, plan, period, currency])
+  @@index([provider])
+  @@index([plan])
+  @@index([currency])
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  EXPIRED // Added: When payment link expires
+  CANCELLED // Added: When payment is cancelled
+  REFUNDED
+}
+
+// ADDED: Payment type enum
+enum PaymentType {
+  ONE_TIME // Single payment
+  RECURRING // Subscription payment
+  SETUP // Initial subscription setup
+}
+
+// NEW: Supported currencies
+enum Currency {
+  IDR
+  USD
+}
+
+// ADDED: Subscription action for history tracking
+enum SubscriptionAction {
+  CREATED
+  ACTIVATED
+  UPGRADED
+  DOWNGRADED
+  PAUSED
+  RESUMED
+  CANCELLED
+  EXPIRED
+  RENEWED
+}
+
+// Chat models for internal realtime messaging
+model Chat {
+  id     String     @id @default(uuid())
+  type   ChatType   @default(INVESTMENT_INQUIRY)
+  status ChatStatus @default(ACTIVE)
+
+  // IMPROVED: Related project (for investment/project discussions)
+  project   Project? @relation(fields: [projectId], references: [id])
+  projectId String?
+
+  // Chat metadata
+  title         String?
+  lastMessage   String?
+  lastMessageAt DateTime?
+
+  // IMPROVED: Use participant model instead of multiple foreign keys
+  participants ChatParticipant[]
+  messages     Message[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([status])
+  @@index([lastMessageAt])
+}
+
+// NEW: Participant junction table for flexible chat membership
+model ChatParticipant {
+  id String @id @default(uuid())
+
+  chat   Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  chatId String
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  // Participant role in this specific chat
+  role ChatParticipantRole @default(MEMBER)
+
+  // Last read message tracking
+  lastReadAt        DateTime?
+  lastReadMessageId String?
+
+  // Notifications
+  isMuted Boolean @default(false)
+
+  // Joined/left tracking
+  joinedAt DateTime  @default(now())
+  leftAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([chatId, userId])
+  @@index([userId])
+  @@index([chatId])
+  @@index([userId, lastReadAt])
+}
+
+model Message {
+  id      String      @id @default(uuid())
+  content String?
+  type    MessageType @default(TEXT)
+
+  // IMPROVED: Single sender relation
+  sender   User   @relation(fields: [senderId], references: [id])
+  senderId String
+
+  chat   Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  chatId String
+
+  // File attachments
+  attachments MessageAttachment[]
+
+  // Message metadata
+  replyToId String?
+  isEdited  Boolean   @default(false)
+  editedAt  DateTime?
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([chatId, createdAt])
+  @@index([senderId])
+}
+
+model MessageAttachment {
+  id           String @id @default(uuid())
+  fileName     String
+  originalName String
+  fileSize     Int
+  mimeType     String
+  fileUrl      String
+
+  message   Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId String
+
+  createdAt DateTime @default(now())
+
+  @@index([messageId])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  type      String
+  relatedId String?
+  metadata  Json?
+  isRead    Boolean   @default(false)
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+enum ChatType {
+  INVESTMENT_INQUIRY
+  PROJECT_DISCUSSION
+  TRADING_SUPPORT
+  GENERAL_SUPPORT
+}
+
+enum ChatParticipantRole {
+  ADMIN
+  MEMBER
+  OBSERVER
+}
+
+enum MessageType {
+  TEXT
+  FILE
+  IMAGE
+  DOCUMENT
+  SYSTEM
+}
+
+enum ChatStatus {
+  ACTIVE
+  CLOSED
+  ARCHIVED
+}
+
+// NEW: Singleton platform settings for bank/payment instructions
+model PlatformSettings {
+  id              String   @id @default("platform_settings")
+  bankName        String?
+  accountName     String?
+  accountNumber   String?
+  instruction     String?
+  updatedByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// NEW: Seller profile to store
+model SellerProfile {
+  id                     String   @id @default(uuid())
+  user                   User     @relation(fields: [userId], references: [id])
+  userId                 String   @unique
+  country                String?
+  address                String?
+  companyLogo            String?
+  companyName            String?
+  descriptions           String?
+  profileCompanyUrl      String?
+  profileCompanyFileName String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+// ============================================
+// NEW ENTITIES FOR SENTRA DAPUR MBG
+// ============================================
+
+model DapurUnit {
+  id             String      @id @default(uuid())
+  name           String
+  location       String?
+  status         ProjectStatus @default(PENDING) // pending approval from PO
+  
+  // Relations
+  projectOwner   User        @relation("ProjectOwnerDapur", fields: [projectOwnerId], references: [id])
+  projectOwnerId String
+  
+  adminPusat     User?       @relation("AdminPusatDapur", fields: [adminPusatId], references: [id])
+  adminPusatId   String?
+  
+  adminDapur     User?       @relation("AdminDapurUnit", fields: [adminDapurId], references: [id])
+  adminDapurId   String?
+  
+  investors      DapurInvestor[] 
+  
+  // Operations
+  arusKas        ArusKas[]
+  stok           Stok[]
+  purchaseOrders PurchaseOrder[]
+
+  // Produksi relations
+  monthlyMenuPlans MonthlyMenuPlan[]
+  menus          Menu[]          @relation("DapurMenu")
+
+  // PO Branding & Signature
+  logoUrl        String?
+  fullAddress    String?
+  signatureUrl   String?
+  adminDapurName String?
+
+  // Micro-investment
+  microInvestors MicroInvestor[]
+
+  // Dapur Dividend (bagi hasil per dapur)
+  dapurDividends DapurDividend[]
+
+  // Cashback (income from suppliers)
+  cashbacks      DapurCashback[]
+
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+}
+
+model DapurInvestor {
+  id               String    @id @default(uuid())
+  dapurUnit        DapurUnit @relation(fields: [dapurUnitId], references: [id])
+  dapurUnitId      String
+  
+  investor         User      @relation(fields: [investorId], references: [id])
+  investorId       String
+  
+  investmentAmount    Float
+  profitSharingPct    Float     // legacy / general
+  profitSharingPctPreBEP  Float @default(0)  // sebelum BEP
+  profitSharingPctPostBEP Float @default(0)  // setelah BEP
+
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([dapurUnitId, investorId])
+}
+
+// ============================================================
+// Laporan Bagi Hasil / Dividen per Dapur oleh Admin Pusat
+// ============================================================
+model DapurDividend {
+  id           String    @id @default(uuid())
+  dapurUnit    DapurUnit @relation(fields: [dapurUnitId], references: [id])
+  dapurUnitId  String
+
+  totalAmount  Float     // Total laba/profit yang akan dibagi untuk dapur ini
+  period       String?   // misal: "Maret 2026" atau "Q1 2026"
+  description  String?   // Keterangan tambahan
+
+  reportedBy   User      @relation("DapurDividendReporter", fields: [reportedById], references: [id])
+  reportedById String
+
+  // Distribusi per investor
+  distributions DapurDividendDistribution[]
+
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([dapurUnitId])
+  @@index([reportedById])
+}
+
+// Distribusi bagi hasil ke masing-masing investor
+model DapurDividendDistribution {
+  id          String        @id @default(uuid())
+  dividend    DapurDividend @relation(fields: [dividendId], references: [id], onDelete: Cascade)
+  dividendId  String
+
+  investor    User          @relation("DapurDividendRecipient", fields: [investorId], references: [id])
+  investorId  String
+
+  amount      Float         // Jumlah yang diterima investor ini
+  percentage  Float         // Persentase bagi hasil yang digunakan
+
+  createdAt   DateTime      @default(now())
+
+  @@unique([dividendId, investorId])
+  @@index([investorId])
+  @@index([dividendId])
+}
+
+model ArusKas {
+  id             String    @id @default(uuid())
+  dapurUnit      DapurUnit @relation(fields: [dapurUnitId], references: [id])
+  dapurUnitId    String
+  
+  type           ArusKasType
+  bookType       CashBookType @default(UMUM)
+  amount         Float
+  description    String
+  referenceNo    String?
+  evidenceUrl    String?
+  transactionDate DateTime    @default(now())
+  category       String      @default("EXTERNAL") // EXTERNAL, INTERNAL_TRANSFER
+  status         ArusKasStatus @default(PENDING)
+  
+  // Relations to items (manual breakdown)
+  items          ArusKasItem[]
+
+  // Relation to Purchase Order (if it's a payment)
+  purchaseOrder  PurchaseOrder? @relation("ArusKasPO")
+  
+  reportedBy     User      @relation("ReportedBy", fields: [reportedById], references: [id])
+  reportedById   String
+  approvedBy     User?     @relation("ApprovedBy", fields: [approvedById], references: [id])
+  approvedById   String?
+
+  createdAt      DateTime  @default(now())
+}
+
+model ArusKasItem {
+  id             String    @id @default(uuid())
+  arusKas        ArusKas   @relation(fields: [arusKasId], references: [id], onDelete: Cascade)
+  arusKasId      String
+  
+  name           String
+  quantity       Float
+  unit           String?
+  pricePerUnit   Float?
+  total          Float     @default(0)
+
+  createdAt      DateTime  @default(now())
+}
+
+enum ArusKasType {
+  IN
+  OUT
+}
+
+model Stok {
+  id             String    @id @default(uuid())
+  dapurUnit      DapurUnit @relation(fields: [dapurUnitId], references: [id])
+  dapurUnitId    String
+  
+  itemName       String
+  quantity       Float
+  unit           String
+  
+  category       StokCategory @default(BAHAN)
+  
+  lastUpdatedBy  User      @relation(fields: [lastUpdatedById], references: [id])
+  lastUpdatedById String
+  
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model PurchaseOrder {
+  id             String    @id @default(uuid())
+  dapurUnit      DapurUnit @relation(fields: [dapurUnitId], references: [id])
+  dapurUnitId    String
+  
+  items          POItem[]
+  status         POStatus  @default(PENDING)
+  type           POType    @default(BAHAN)
+  paymentStatus  POPaymentStatus @default(UNPAID)
+  paymentDate    DateTime?
+  arusKas        ArusKas?  @relation("ArusKasPO", fields: [arusKasId], references: [id])
+  arusKasId      String?   @unique
+  
+  createdBy      User      @relation("POCreated", fields: [createdById], references: [id])
+  createdById    String
+  
+  approvedBy     User?     @relation("POApproved", fields: [approvedById], references: [id])
+  approvedById   String?
+
+  loadingGoods   LoadingGood[]
+
+  totalAmount    Float     @default(0)
+
+  // Cashback related to this PO
+  cashbacks      DapurCashback[]
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model POItem {
+  id              String        @id @default(uuid())
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  purchaseOrderId String
+  
+  product         Product?      @relation(fields: [productId], references: [id])
+  productId       String?
+  productName     String?
+  supplierName    String?
+  unit            String?
+  
+  quantity        Int
+  pricePerUnit    Float
+  isOrdered       Boolean       @default(false)
+
+  receivedItems   LoadingGoodItem[]
+}
+
+// ============================================
+
+model DapurCashback {
+  id              String        @id @default(uuid())
+  dapurUnit       DapurUnit     @relation(fields: [dapurUnitId], references: [id])
+  dapurUnitId     String
+  
+  amount          Float
+  supplierName    String?
+  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+  purchaseOrderId String?
+  
+  description     String?
+  transactionDate DateTime      @default(now())
+  
+  reportedBy      User          @relation("CashbackReporter", fields: [reportedById], references: [id])
+  reportedById    String
+  
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([dapurUnitId])
+  @@index([reportedById])
+}
+
+// LOADING GOODS / PENERIMAAN BARANG
+// ============================================
+
+model LoadingGood {
+  id              String        @id @default(uuid())
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  purchaseOrderId String
+  
+  receivedBy      User          @relation("ReceivedBy", fields: [receivedById], references: [id])
+  receivedById    String
+  
+  notes           String?
+  items           LoadingGoodItem[]
+  
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+model LoadingGoodItem {
+  id              String        @id @default(uuid())
+  loadingGood     LoadingGood   @relation(fields: [loadingGoodId], references: [id])
+  loadingGoodId   String
+  
+  poItem          POItem        @relation(fields: [poItemId], references: [id])
+  poItemId        String
+  
+  quantityReceived Float        // Total yang diterima di gudang
+  quantityRejected Float        // Total yang ditolak karena kualitas
+  quantityReturned Float        // Total yang dikembalikan
+  
+  notes           String?       // Alasan reject/return
+  qualityCheck    String?       // Catatan kualitas
+  
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+enum POStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ORDERED
+  DELIVERED
+}
+
+enum StokCategory {
+  BAHAN
+  LAIN
+}
+
+enum POType {
+  BAHAN
+  MANUAL
+}
+
+enum CashBookType {
+  UMUM
+  PEMBANTU
+}
+
+enum POPaymentStatus {
+  UNPAID
+  PAID
+}
+
+// ============================================
+// PRODUKSI ROLE MODELS
+// ============================================
+
+// Jenis porsi dinamis (Global)
+model PortionType {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+
+  // Relations to menu ingredients & daily entries
+  menuIngredients  MenuIngredient[]
+  dailyPortions    DailyMenuPortion[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Template master menu (resep menu) — Global
+model Menu {
+  id          String    @id @default(uuid())
+  name        String
+  description String?
+  category    String?
+  calories    Float?
+  protein     Float?
+  carbs       Float?
+  fat         Float?
+
+  // Bahan baku per porsi
+  ingredients MenuIngredient[]
+
+  // Daily menu plan entries
+  dailyEntries DailyMenuEntry[]
+
+  dapurUnitId String?
+  dapurUnit   DapurUnit? @relation("DapurMenu", fields: [dapurUnitId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, dapurUnitId])
+}
+
+// Bahan baku per porsi untuk satu menu
+model MenuIngredient {
+  id            String      @id @default(uuid())
+  menu          Menu        @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  menuId        String
+  portionType   PortionType @relation(fields: [portionTypeId], references: [id])
+  portionTypeId String
+
+  // Nama bahan baku (bebas teks, bisa referensi stok)
+  ingredientName String  // e.g. "Beras", "Minyak Goreng"
+  unit           String  // e.g. "gram", "ml", "liter"
+  gramsPerPortion Float  // berapa gram/unit bahan per 1 porsi jenis ini
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([menuId, portionTypeId, ingredientName])
+  @@index([menuId])
+  @@index([portionTypeId])
+}
+
+// Rencana menu 1 bulan untuk sebuah dapur
+model MonthlyMenuPlan {
+  id          String    @id @default(uuid())
+  dapurUnit   DapurUnit @relation(fields: [dapurUnitId], references: [id], onDelete: Cascade)
+  dapurUnitId String
+  year        Int
+  month       Int       // 1-12
+  notes       String?
+
+  // Daily entries for this month
+  dailyEntries DailyMenuEntry[]
+
+  createdBy   String    // userId
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([dapurUnitId, year, month])
+  @@index([dapurUnitId])
+}
+
+// Menu yang dipilih untuk satu hari (satu hari bisa banyak menu)
+model DailyMenuEntry {
+  id               String          @id @default(uuid())
+  monthlyPlan      MonthlyMenuPlan @relation(fields: [monthlyPlanId], references: [id], onDelete: Cascade)
+  monthlyPlanId    String
+  date             DateTime        // tanggal spesifik
+  
+  menu             Menu            @relation(fields: [menuId], references: [id])
+  menuId           String
+
+  notes            String?
+
+  // Jumlah porsi per jenis porsi untuk entry ini
+  portions         DailyMenuPortion[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([monthlyPlanId])
+  @@index([date])
+  @@index([menuId])
+}
+
+// Jumlah porsi per jenis porsi untuk satu daily menu entry
+model DailyMenuPortion {
+  id             String         @id @default(uuid())
+  dailyEntry     DailyMenuEntry @relation(fields: [dailyEntryId], references: [id], onDelete: Cascade)
+  dailyEntryId   String
+  portionType    PortionType    @relation(fields: [portionTypeId], references: [id])
+  portionTypeId  String
+  quantity       Int            // jumlah porsi yang dibuat
+
+  @@unique([dailyEntryId, portionTypeId])
+  @@index([dailyEntryId])
+  @@index([portionTypeId])
+}
+
+// ============================================
+// MICRO-INVESTMENT PRIVATE SUB-LEDGER
+// ============================================
+
+model MicroInvestor {
+  id                    String    @id @default(uuid())
+  parentInvestor        User      @relation("MicroParent", fields: [parentInvestorId], references: [id])
+  parentInvestorId      String
+  
+  user                  User      @relation("MicroUser", fields: [userId], references: [id])
+  userId                String    @unique
+  
+  dapurUnit             DapurUnit @relation(fields: [dapurUnitId], references: [id])
+  dapurUnitId           String
+  
+  internalSharePct      Float     // Percentage of Parent's profit share (e.g. 10.00%)
+  isActive              Boolean   @default(true)
+  
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([parentInvestorId])
+  @@index([dapurUnitId])
+}
+
+model InvestorWallet {
+  id         String   @id @default(uuid())
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String   @unique
+  balance    Float    @default(0)
+  
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model MicroDividend {
+  id                  String   @id @default(uuid())
+  financialReportId   String?  // Reference to report manual or ID
+  user                User     @relation("InvestorMicroDividends", fields: [userId], references: [id])
+  userId              String
+  amount              Float
+  type                String   @default("MICRO") // PRIMARY/MICRO
+  
+  createdAt           DateTime @default(now())
+}
+
+enum ArusKasStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}

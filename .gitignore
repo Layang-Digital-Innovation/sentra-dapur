@@ -1,0 +1,53 @@
+# OS / general
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env files (prevent secrets)
+.env
+.env.*
+**/.env
+**/.env.*
+*.env
+
+# Node modules
+node_modules/
+**/node_modules/
+
+# TypeScript build info
+*.tsbuildinfo
+backend/tsconfig.tsbuildinfo
+frontend/tsconfig.tsbuildinfo
+
+# Build outputs / caches
+backend/dist/
+frontend/.next/
+frontend/out/
+frontend/build/
+**/.cache/
+
+# Uploads (runtime files)
+backend/uploads/
+uploads/
+
+# Coverage
+coverage/
+
+# Prisma generated artifacts (keep schema & migrations tracked)
+**/prisma/*.db
+
+# Temp files
+.tmp/
+temp/
+*.swp
