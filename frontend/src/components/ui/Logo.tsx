@@ -3,31 +3,11 @@ import React from 'react';
 export const Logo = ({ className = "h-8", showText = true }: { className?: string; showText?: boolean }) => {
   return (
     <div className={`flex items-center ${className}`}>
-      <svg 
-        viewBox="0 0 100 100" 
-        className="h-full aspect-square"
-        fill="none" 
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        {/* Navy 'S' */}
-        <g stroke="#081A3A" strokeWidth="8" strokeLinejoin="miter" strokeLinecap="square">
-          <path d="M 44 5.4 A 45 45 0 0 0 5 50 L 44 50" />
-          <path d="M 44 50 L 25 50 L 25 87.4 A 45 45 0 0 0 44 94.6" />
-          <path d="M 44 50 L 44 25 L 25 25" />
-        </g>
-        
-        {/* Gold 'G/D' */}
-        <g stroke="#A89269" strokeWidth="8" strokeLinejoin="miter" strokeLinecap="square">
-          <path d="M 56 5.4 A 45 45 0 0 1 95 50 A 45 45 0 0 1 56 94.6" />
-          <path d="M 95 50 L 75 50 L 75 25 L 56 25" />
-          <path d="M 75 50 L 75 75 L 56 75" />
-        </g>
-      </svg>
-      {showText && (
-        <span className="ml-[12px] font-bold text-slate-900 tracking-tight leading-none" style={{ fontSize: '1.4em', letterSpacing: '-0.03em' }}>
-          sentradapur
-        </span>
-      )}
+      <img 
+        src={showText ? "/logo.png" : "/logo-icon.png"}
+        alt="Sentra Dapur" 
+        className="h-full w-auto object-contain"
+      />
     </div>
   );
 };
