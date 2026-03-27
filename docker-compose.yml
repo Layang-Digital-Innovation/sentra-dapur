@@ -1,50 +1,25 @@
-version: "3.9"
-
 services:
-  db:
-    image: postgres:16-alpine
-    container_name: tic-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: tradeinvestcenter
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - db-data:/var/lib/postgresql/data
-    networks:
-      - tic-network
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: tic-backend
     restart: unless-stopped
-    depends_on:
-      - db
     environment:
       NODE_ENV: production
       PORT: 3001
-      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/tradeinvestcenter?schema=public}
-      APP_URL: ${APP_URL:-https://tradeinvestcenter.com}
-      FRONTEND_URL: ${FRONTEND_URL:-https://tradeinvestcenter.com}
+      DATABASE_URL: ${DATABASE_URL:postgresql://admin_user:Layang2020@shared-postgres:5432/sentra_dapur_db}
+      APP_URL: ${APP_URL:-https://api.sentradapur.com}
+      FRONTEND_URL: ${FRONTEND_URL:-https://sentradapur.com}
       JWT_SECRET: ${JWT_SECRET:-change-me}
       XENDIT_SECRET_KEY: ${XENDIT_SECRET_KEY:-}
       PAYPAL_MODE: ${PAYPAL_MODE:-live}
       PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-}
       PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-}
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.backend-api.rule=Host(`tradeinvestcenter.com`) && PathPrefix(`/api`)"
-      - "traefik.http.routers.backend-api.entrypoints=websecure"
-      - "traefik.http.routers.backend-api.tls.certresolver=letsencrypt"
-      - "traefik.http.services.backend-api.loadbalancer.server.port=3001"
-      - "traefik.http.routers.backend-api.service=backend-api"
-      - "traefik.http.routers.backend-api.priority=10"
     volumes:
       - uploads-data:/app/uploads
     networks:
-      - tic-network
+      - nginx-network
     expose:
       - "3001"
 
@@ -53,34 +28,23 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://tradeinvestcenter.com}
-        NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-https://tradeinvestcenter.com}
-    container_name: tic-frontend
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.sentradapur.com}
+        NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-https://api.sentradapur.com}
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://tradeinvestcenter.com}
-      NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-https://tradeinvestcenter.com}
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.tic-frontend.rule=Host(`tradeinvestcenter.com`)"
-      - "traefik.http.routers.tic-frontend.entrypoints=websecure"
-      - "traefik.http.routers.tic-frontend.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.tic-frontend.priority=1"
-      - "traefik.http.services.tic-frontend.loadbalancer.server.port=3000"
-      - "traefik.http.routers.tic-frontend.service=tic-frontend"
-      - "traefik.http.middlewares.tic-frontend-headers.headers.customresponseheaders.X-Frame-Options=SAMEORIGIN"
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.sentradapur.com}
+      NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-https://api.sentradapur.com}
     depends_on:
       - backend
     networks:
-      - tic-network
+      - nginx-network
     expose:
       - "3000"
 
 volumes:
-  db-data:
   uploads-data:
 
 networks:
-  tic-network:
-    driver: bridge
+  nginx-network:
+    external: true
