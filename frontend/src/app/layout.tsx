@@ -14,6 +14,11 @@ import '@/utils/axiosConfig';
 export const metadata: Metadata = {
   title: "Sentra Dapur",
   description: "Platform Sentra Dapur",
+  icons: {
+    icon: "/logo-icon.png",
+    shortcut: "/logo-icon.png",
+    apple: "/logo-icon.png",
+  },
 };
 
 export default function RootLayout({

@@ -66,7 +66,7 @@ export class PaypalSubscriptionService {
   /**
    * Membuat billing plan di PayPal untuk subscription
    */
-  async createBillingPlan(plan: SubscriptionPlan, price: number, period?: 'MONTHLY' | 'YEARLY', name?: string) {
+  async createBillingPlan(plan: SubscriptionPlan, price: number, period?: 'MONTHLY' | 'YEARLY' | 'TWO_YEARS', name?: string) {
      try {
        const clientId = this.configService.get<string>('PAYPAL_CLIENT_ID');
        const clientSecret = this.configService.get<string>('PAYPAL_CLIENT_SECRET');
@@ -88,7 +88,10 @@ export class PaypalSubscriptionService {
        let frequency = 'MONTH';
        let frequencyInterval = 1;
        const resolvedPeriod = period ?? (plan === SubscriptionPlan.GOLD_YEARLY ? 'YEARLY' : 'MONTHLY');
-       if (resolvedPeriod === 'YEARLY') {
+       if (resolvedPeriod === 'TWO_YEARS') {
+         frequency = 'YEAR';
+         frequencyInterval = 2;
+       } else if (resolvedPeriod === 'YEARLY') {
          frequency = 'YEAR';
          frequencyInterval = 1;
        }

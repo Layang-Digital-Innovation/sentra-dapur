@@ -288,8 +288,8 @@ model Shipment {
 // IMPROVED: Enhanced Subscription model with better tracking
 model Subscription {
   id                 String             @id @default(uuid())
-  dapurUnit          DapurUnit          @relation(fields: [dapurUnitId], references: [id], onDelete: Cascade)
-  dapurUnitId        String             @unique
+  dapurUnit          DapurUnit?         @relation(fields: [dapurUnitId], references: [id], onDelete: Cascade)
+  dapurUnitId        String?            @unique
   status             SubscriptionStatus @default(TRIAL)
   plan               SubscriptionPlan   @default(TRIAL)
   startedAt          DateTime           @default(now())
@@ -516,8 +516,8 @@ model LabelDapur {
   id          String          @id @default(uuid())
   label       EnterpriseLabel @relation(fields: [labelId], references: [id], onDelete: Cascade)
   labelId     String
-  dapurUnit   DapurUnit       @relation(fields: [dapurUnitId], references: [id], onDelete: Cascade)
-  dapurUnitId String
+  dapurUnit   DapurUnit?      @relation(fields: [dapurUnitId], references: [id], onDelete: Cascade)
+  dapurUnitId String?
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
@@ -530,6 +530,7 @@ enum SubscriptionPlan {
   TRIAL
   GOLD_MONTHLY
   GOLD_YEARLY
+  GOLD_TWO_YEARS
   ENTERPRISE_CUSTOM
 }
 
@@ -542,6 +543,7 @@ enum PaymentProvider {
 enum BillingPeriod {
   MONTHLY
   YEARLY
+  TWO_YEARS
 }
 
 model BillingPlan {
@@ -566,6 +568,7 @@ model BillingPlan {
 
 enum PaymentStatus {
   PENDING
+  AWAITING_APPROVAL // Added: For manual payments
   PAID
   FAILED
   EXPIRED // Added: When payment link expires
@@ -833,9 +836,9 @@ model DapurUnit {
 }
 
 model DapurInvestor {
-  id          String    @id @default(uuid())
-  dapurUnit   DapurUnit @relation(fields: [dapurUnitId], references: [id])
-  dapurUnitId String
+  id          String     @id @default(uuid())
+  dapurUnit   DapurUnit? @relation(fields: [dapurUnitId], references: [id])
+  dapurUnitId String?
 
   investor   User   @relation(fields: [investorId], references: [id])
   investorId String
@@ -855,9 +858,9 @@ model DapurInvestor {
 // Laporan Bagi Hasil / Dividen per Dapur oleh Admin Pusat
 // ============================================================
 model DapurDividend {
-  id          String    @id @default(uuid())
-  dapurUnit   DapurUnit @relation(fields: [dapurUnitId], references: [id])
-  dapurUnitId String
+  id          String     @id @default(uuid())
+  dapurUnit   DapurUnit? @relation(fields: [dapurUnitId], references: [id])
+  dapurUnitId String?
 
   totalAmount Float // Total laba/profit yang akan dibagi untuk dapur ini
   period      String? // misal: "Maret 2026" atau "Q1 2026"
@@ -896,9 +899,9 @@ model DapurDividendDistribution {
 }
 
 model ArusKas {
-  id          String    @id @default(uuid())
-  dapurUnit   DapurUnit @relation(fields: [dapurUnitId], references: [id])
-  dapurUnitId String
+  id          String     @id @default(uuid())
+  dapurUnit   DapurUnit? @relation(fields: [dapurUnitId], references: [id])
+  dapurUnitId String?
 
   type            ArusKasType
   bookType        CashBookType  @default(UMUM)
@@ -944,9 +947,9 @@ enum ArusKasType {
 }
 
 model Stok {
-  id          String    @id @default(uuid())
-  dapurUnit   DapurUnit @relation(fields: [dapurUnitId], references: [id])
-  dapurUnitId String
+  id          String     @id @default(uuid())
+  dapurUnit   DapurUnit? @relation(fields: [dapurUnitId], references: [id])
+  dapurUnitId String?
 
   itemName String
   quantity Float
@@ -962,9 +965,9 @@ model Stok {
 }
 
 model PurchaseOrder {
-  id          String    @id @default(uuid())
-  dapurUnit   DapurUnit @relation(fields: [dapurUnitId], references: [id])
-  dapurUnitId String
+  id          String     @id @default(uuid())
+  dapurUnit   DapurUnit? @relation(fields: [dapurUnitId], references: [id])
+  dapurUnitId String?
 
   items         POItem[]
   status        POStatus        @default(PENDING)
@@ -1012,9 +1015,9 @@ model POItem {
 // ============================================
 
 model DapurCashback {
-  id          String    @id @default(uuid())
-  dapurUnit   DapurUnit @relation(fields: [dapurUnitId], references: [id])
-  dapurUnitId String
+  id          String     @id @default(uuid())
+  dapurUnit   DapurUnit? @relation(fields: [dapurUnitId], references: [id])
+  dapurUnitId String?
 
   amount          Float
   supplierName    String?
@@ -1166,9 +1169,9 @@ model MenuIngredient {
 
 // Rencana menu 1 bulan untuk sebuah dapur
 model MonthlyMenuPlan {
-  id          String    @id @default(uuid())
-  dapurUnit   DapurUnit @relation(fields: [dapurUnitId], references: [id], onDelete: Cascade)
-  dapurUnitId String
+  id          String     @id @default(uuid())
+  dapurUnit   DapurUnit? @relation(fields: [dapurUnitId], references: [id], onDelete: Cascade)
+  dapurUnitId String?
   year        Int
   month       Int // 1-12
   notes       String?
@@ -1233,8 +1236,8 @@ model MicroInvestor {
   user   User   @relation("MicroUser", fields: [userId], references: [id])
   userId String @unique
 
-  dapurUnit   DapurUnit @relation(fields: [dapurUnitId], references: [id])
-  dapurUnitId String
+  dapurUnit   DapurUnit? @relation(fields: [dapurUnitId], references: [id])
+  dapurUnitId String?
 
   internalSharePct Float // Percentage of Parent's profit share (e.g. 10.00%)
   isActive         Boolean @default(true)

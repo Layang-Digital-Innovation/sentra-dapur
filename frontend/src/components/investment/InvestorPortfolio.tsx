@@ -491,13 +491,29 @@ const InvestorPortfolio: React.FC = () => {
                       <div>
                         <h5 className="text-sm font-semibold text-gray-700 mb-3">Proporsi Bagi Hasil</h5>
                         <div className="space-y-2">
-                          <div className="flex justify-between items-center bg-gray-50 rounded-lg p-3">
-                            <span className="text-sm text-gray-600">Pra-BEP</span>
-                            <span className="text-sm font-bold text-gray-900">{stake.profitSharingPctPreBEP.toFixed(2)}%</span>
+                          <div className="bg-gray-50 rounded-lg p-3">
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="text-sm text-gray-600">Pra-BEP</span>
+                              <span className="text-sm font-bold text-gray-900">{stake.profitSharingPctPreBEP.toFixed(2)}%</span>
+                            </div>
+                            <div className="flex justify-between items-center pt-1 border-t border-gray-200">
+                              <span className="text-[10px] text-gray-400">Estimasi Nominal (Saldo Saat Ini)</span>
+                              <span className="text-xs font-bold text-amber-600">
+                                {formatCurrency(Math.max(0, (stake as any).currentBalance || 0) * (stake.profitSharingPctPreBEP / 100))}
+                              </span>
+                            </div>
                           </div>
-                          <div className="flex justify-between items-center bg-gray-50 rounded-lg p-3">
-                            <span className="text-sm text-gray-600">Pasca-BEP</span>
-                            <span className="text-sm font-bold text-gray-900">{stake.profitSharingPctPostBEP.toFixed(2)}%</span>
+                          <div className="bg-gray-50 rounded-lg p-3">
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="text-sm text-gray-600">Pasca-BEP</span>
+                              <span className="text-sm font-bold text-gray-900">{stake.profitSharingPctPostBEP.toFixed(2)}%</span>
+                            </div>
+                            <div className="flex justify-between items-center pt-1 border-t border-gray-200">
+                              <span className="text-[10px] text-gray-400">Estimasi Nominal (Saldo Saat Ini)</span>
+                              <span className="text-xs font-bold text-green-600">
+                                {formatCurrency(Math.max(0, (stake as any).currentBalance || 0) * (stake.profitSharingPctPostBEP / 100))}
+                              </span>
+                            </div>
                           </div>
                           <div className="flex justify-between items-center bg-blue-50 border border-blue-200 rounded-lg p-3">
                             <span className="text-sm font-semibold text-gray-700">Proporsi Umum</span>

@@ -7,6 +7,24 @@ export class DapurService {
   constructor(private readonly prisma: PrismaService) {}
 
   // ============================================
+  // PRIVATE HELPERS
+  // ============================================
+  private async checkDapurAccess(dapurId: string, userId: string, role: Role) {
+    const dapur = await this.prisma.dapurUnit.findUnique({ where: { id: dapurId } });
+    if (!dapur) throw new NotFoundException('Dapur not found');
+
+    const isOwner = role === Role.PROJECT_OWNER && dapur.projectOwnerId === userId;
+    const isPusat = role === Role.ADMIN_PUSAT && dapur.adminPusatId === userId;
+    const isDapur = role === Role.ADMIN_DAPUR && dapur.adminDapurId === userId;
+    const isSuper = role === Role.SUPER_ADMIN || role === Role.ADMIN;
+
+    if (!isOwner && !isPusat && !isDapur && !isSuper) {
+      throw new ForbiddenException('You do not have access to this Dapur Unit');
+    }
+    return dapur;
+  }
+
+  // ============================================
   // DAPUR UNIT MANAGEMENT (PO / Admin Pusat)
   // ============================================
   async createDapurUnit(userId: string, role: Role, data: { name: string; location?: string; adminPusatId?: string }) {
@@ -36,10 +54,9 @@ export class DapurService {
     });
   }
 
-  async assignAdminDapur(dapurId: string, adminPusatId: string, adminDapurId: string) {
-    const dapur = await this.prisma.dapurUnit.findUnique({ where: { id: dapurId } });
-    if (!dapur) throw new NotFoundException('Dapur not found');
-    if (dapur.adminPusatId !== adminPusatId) throw new ForbiddenException('Not your Dapur Unit');
+  async assignAdminDapur(dapurId: string, userId: string, role: Role, adminDapurId: string) {
+    // Auth check: ensure the dapur belongs to this user
+    await this.checkDapurAccess(dapurId, userId, role);
 
     // Clear previous assignment so 1 Admin Dapur handles 1 Dapur Unit at most
     await this.prisma.dapurUnit.updateMany({
@@ -61,6 +78,9 @@ export class DapurService {
     if (role !== Role.PROJECT_OWNER && role !== Role.ADMIN_PUSAT) {
       throw new ForbiddenException('Unauthorized to manage investors');
     }
+
+    // Auth check: ensure the dapur belongs to this user
+    await this.checkDapurAccess(dapurId, userId, role);
 
     // Verify all investor IDs exist and have INVESTOR role
     for (const data of investorsData) {
@@ -95,7 +115,7 @@ export class DapurService {
   // ============================================
   // OPERATIONAL: ARUS KAS (Admin Dapur) - Manual transaction dates supported
   // ============================================
-  async reportArusKas(userId: string, dapurId: string, data: { 
+  async reportArusKas(userId: string, role: Role, dapurId: string, data: { 
     type: ArusKasType; 
     bookType: CashBookType; 
     amount: number; 
@@ -105,6 +125,9 @@ export class DapurService {
     transactionDate?: string;
     items?: { name: string; quantity: number; unit?: string; pricePerUnit?: number; total?: number }[];
   }) {
+    // Audit check
+    await this.checkDapurAccess(dapurId, userId, role);
+
     // General Cash (UMUM) needs approval. Petty Cash (PEMBANTU) is auto-approved.
     const status = data.bookType === CashBookType.UMUM ? ArusKasStatus.PENDING : ArusKasStatus.APPROVED;
 
@@ -136,8 +159,21 @@ export class DapurService {
       }
     });
   }
-  async getArusKas(dapurId: string, bookType?: any) {
-    return this.prisma.arusKas.findMany({
+  async getArusKas(dapurId: string, userId: string, role: Role, bookType?: any) {
+    // Auth check
+    const dapur = await this.prisma.dapurUnit.findUnique({ where: { id: dapurId } });
+    if (!dapur) throw new NotFoundException('Dapur not found');
+
+    const isOwner = role === Role.PROJECT_OWNER && dapur.projectOwnerId === userId;
+    const isPusat = role === Role.ADMIN_PUSAT && dapur.adminPusatId === userId;
+    const isDapur = role === Role.ADMIN_DAPUR && dapur.adminDapurId === userId;
+    const isSuper = role === Role.SUPER_ADMIN || role === Role.ADMIN;
+
+    if (!isOwner && !isPusat && !isDapur && !isSuper) {
+      throw new ForbiddenException('Not authorized to view this Dapur Arus Kas');
+    }
+
+    let arusKas = await this.prisma.arusKas.findMany({
       where: { 
         dapurUnitId: dapurId,
         ...(bookType && { bookType })
@@ -148,6 +184,24 @@ export class DapurService {
       },
       orderBy: { transactionDate: 'desc' }
     });
+
+    // Filter sensitive data for roles other than ADMIN_PUSAT, SUPER_ADMIN, and ADMIN
+    const isPowerUser = role === Role.ADMIN_PUSAT || role === Role.SUPER_ADMIN || role === Role.ADMIN;
+    if (!isPowerUser) {
+      const sensitiveKeywords = [
+        'Komitmen ke Yayasan',
+        'Insentif kepala SPPG',
+        'Insentif Akuntan SPPG',
+        'Insentif Ahli Gizi'
+      ];
+      
+      arusKas = arusKas.filter(item => {
+        const desc = item.description || '';
+        return !sensitiveKeywords.some(keyword => desc.toLowerCase().includes(keyword.toLowerCase()));
+      });
+    }
+
+    return arusKas;
   }
 
   async approveArusKas(adminPusatId: string, id: string) {
@@ -383,14 +437,18 @@ export class DapurService {
   }
 
   async getAllPurchaseOrders(userId: string, role: Role) {
-    let whereClause = {};
+    let whereClause: any = null;
     if (role === Role.ADMIN_PUSAT) {
        whereClause = { dapurUnit: { adminPusatId: userId } };
     } else if (role === Role.ADMIN_DAPUR) {
        whereClause = { dapurUnit: { adminDapurId: userId } };
     } else if (role === Role.PROJECT_OWNER) {
        whereClause = { dapurUnit: { projectOwnerId: userId } };
+    } else if (role === Role.SUPER_ADMIN || role === Role.ADMIN) {
+       whereClause = {};
     }
+
+    if (whereClause === null) return [];
     
     return this.prisma.purchaseOrder.findMany({
       where: whereClause,
@@ -408,11 +466,33 @@ export class DapurService {
   // VISIBILITY (BIRD'S EYE VIEW)
   // ============================================
   async getDapurList(userId: string, role: Role) {
+    const sensitiveKeywords = [
+      'Komitmen ke Yayasan',
+      'Insentif kepala SPPG',
+      'Insentif Akuntan SPPG',
+      'Insentif Ahli Gizi'
+    ];
+
     if (role === Role.ADMIN_DAPUR) {
-      return this.prisma.dapurUnit.findMany({
+      const units = await this.prisma.dapurUnit.findMany({
         where: { adminDapurId: userId },
-        include: { investors: true }
+        include: { 
+          investors: true,
+          arusKas: {
+            include: { reportedBy: { select: { fullname: true, email: true } } },
+            orderBy: { transactionDate: 'desc' }
+          }
+        }
       });
+
+      // Filter sensitive arus kas for Admin Dapur
+      return units.map(unit => ({
+        ...unit,
+        arusKas: unit.arusKas.filter(item => {
+          const desc = item.description || '';
+          return !sensitiveKeywords.some(keyword => desc.toLowerCase().includes(keyword.toLowerCase()));
+        })
+      }));
     } else if (role === Role.ADMIN_PUSAT) {
       return this.prisma.dapurUnit.findMany({
         where: { adminPusatId: userId },
@@ -435,7 +515,7 @@ export class DapurService {
         }
       });
     } else if (role === Role.PROJECT_OWNER) {
-      return this.prisma.dapurUnit.findMany({
+      const units = await this.prisma.dapurUnit.findMany({
         where: { projectOwnerId: userId },
         include: { 
           investors: {
@@ -447,26 +527,70 @@ export class DapurService {
               approvedBy: { select: { fullname: true, email: true } },
               items: true,
               purchaseOrder: { include: { items: true } }
-            }
+            },
+            orderBy: { transactionDate: 'desc' }
           }, 
-          purchaseOrders: true, 
-          adminDapur: { select: { id: true, fullname: true, email: true } }, 
-          adminPusat: { select: { id: true, fullname: true, email: true } } 
+          purchaseOrders: true,
+          adminDapur: { select: { id: true, fullname: true, email: true } },
+          adminPusat: { select: { id: true, fullname: true, email: true } }
         }
       });
+
+      // Filter sensitive arus kas for Project Owner too? 
+      // User said: "hanya tampil di admin pusat namun di admin dapur di hide"
+      // Usually PO shouldn't see these internal incentives either if not specified.
+      // But the prompt specifically mentioned Admin Dapur.
+      // I'll filter for everyone EXCEPT Admin Pusat and Super Admin to be safe.
+      return units.map(unit => ({
+        ...unit,
+        arusKas: unit.arusKas.filter(item => {
+          const desc = item.description || '';
+          return !sensitiveKeywords.some(keyword => desc.toLowerCase().includes(keyword.toLowerCase()));
+        })
+      }));
     } else if (role === Role.INVESTOR) {
       // Find DAPUR where this investor has a stake
       const stakes = await this.prisma.dapurInvestor.findMany({
         where: { investorId: userId },
-        include: { dapurUnit: true }
+        include: { 
+          dapurUnit: {
+            include: {
+              arusKas: {
+                orderBy: { transactionDate: 'desc' }
+              }
+            }
+          }
+        }
       });
-      return stakes;
+      
+      // Filter sensitive arus kas for Investor
+      return stakes.map(stake => ({
+        ...stake,
+        dapurUnit: {
+          ...stake.dapurUnit,
+          arusKas: stake.dapurUnit.arusKas.filter(item => {
+            const desc = item.description || '';
+            return !sensitiveKeywords.some(keyword => desc.toLowerCase().includes(keyword.toLowerCase()));
+          })
+        }
+      }));
     }
     
-    // Super admin gets all
-    return this.prisma.dapurUnit.findMany({
-      include: { investors: true, arusKas: true }
-    });
+    // Only SUPER_ADMIN and ADMIN get all
+    if (role === Role.SUPER_ADMIN || role === Role.ADMIN) {
+      return this.prisma.dapurUnit.findMany({
+        include: { 
+          investors: true, 
+          arusKas: {
+            include: { reportedBy: { select: { fullname: true, email: true } } },
+            orderBy: { transactionDate: 'desc' }
+          }
+        }
+      });
+    }
+
+    // Default to empty for other roles not explicitly handled
+    return [];
   }
 
   async getMyDapurUnit(userId: string, role?: Role) {
@@ -775,8 +899,8 @@ export class DapurService {
       transactionDate?: string;
     }
   ) {
-    if (role !== Role.ADMIN_PUSAT && role !== Role.PROJECT_OWNER && role !== Role.SUPER_ADMIN) {
-      throw new ForbiddenException('Akses ditolak: Hanya Admin Pusat atau PO yang bisa mencatat cashback');
+    if (role !== Role.ADMIN_PUSAT && role !== Role.SUPER_ADMIN && role !== Role.ADMIN) {
+      throw new ForbiddenException('Akses ditolak: Hanya Admin Pusat yang bisa mencatat cashback');
     }
 
     const tDate = data.transactionDate ? new Date(data.transactionDate) : new Date();
@@ -802,7 +926,7 @@ export class DapurService {
    * Mengambil riwayat cashback untuk suatu Dapur Unit.
    */
   async getCashbackHistory(role: Role, dapurId: string) {
-    if (role !== Role.ADMIN_PUSAT && role !== Role.PROJECT_OWNER && role !== Role.SUPER_ADMIN) {
+    if (role !== Role.ADMIN_PUSAT && role !== Role.SUPER_ADMIN && role !== Role.ADMIN) {
       throw new ForbiddenException('Akses ditolak: Anda tidak memiliki izin untuk melihat laporan cashback');
     }
 

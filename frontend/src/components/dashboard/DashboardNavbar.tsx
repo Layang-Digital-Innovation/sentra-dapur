@@ -261,7 +261,7 @@ const DashboardNavbar: React.FC<DashboardNavbarProps> = ({
               {isMobileMenuOpen ? <FiX className="block h-6 w-6" /> : <FiMenu className="block h-6 w-6" />}
             </button>
             <div className="md:hidden ml-1 flex items-center">
-              <Logo className="h-8" showText={false} />
+              <Logo className="h-10" showText={false} />
             </div>
           </div>
 

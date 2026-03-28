@@ -290,9 +290,16 @@ export class SubscriptionController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.SUPER_ADMIN)
-  @Post('enterprise/label/investors/bulk-subscribe')
-  async bulkSubscribeDapurs(@Body() body: BulkSubscribeDapurDto) {
-    return this.subscriptionService.bulkSubscribeDapursForLabel(body);
+  @Get('dapur-units/all')
+  async listAllDapurUnits() {
+    return this.subscriptionService.getAllDapurUnits();
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
+  @Post('dapur-units/subscribe')
+  async subscribeDapurUnits(@Body() body: BulkSubscribeDapurDto) {
+    return this.subscriptionService.subscribeDapurUnits(body);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -335,7 +342,7 @@ export class SubscriptionController {
     @Request() req,
     @Body() body: {
       previousPaymentId: string;
-      period?: 'MONTHLY' | 'YEARLY';
+      period?: 'MONTHLY' | 'YEARLY' | 'TWO_YEARS';
       currency?: string;
       // choose either totalAmount or pricePerUser for renewal
       totalAmount?: number;
@@ -429,10 +436,13 @@ export class SubscriptionController {
     const take = Math.min(parseInt(limit || '50', 10) || 50, 200);
     const where: any = {};
     if (labelId) where.labelId = labelId;
-    // Status filter: support enum statuses; "AWAITING_APPROVAL" maps to metadata.awaitingApproval=true
+    // Status filter: support enum statuses; "AWAITING_APPROVAL" can be in status or metadata
     if (status) {
       if (status === 'AWAITING_APPROVAL') {
-        where.metadata = { path: ['awaitingApproval'], equals: true } as any;
+        where.OR = [
+          { status: 'AWAITING_APPROVAL' as any },
+          { metadata: { path: ['awaitingApproval'], equals: true } as any },
+        ];
       } else {
         where.status = status as any;
       }
@@ -440,19 +450,14 @@ export class SubscriptionController {
     // Provider filter: only apply for known enum values
     if (provider) {
       const p = provider.toUpperCase();
-      if (p === 'XENDIT' || p === 'PAYPAL') {
+      if (p === 'XENDIT' || p === 'PAYPAL' || p === 'MANUAL') {
         where.provider = p as any;
       }
-      // ignore 'manual' because it may not be a Prisma enum; rely on mode/metadata filters instead
     }
-    if (mode) where.metadata = { path: ['mode'], equals: mode } as any;
-
-    // Default to ORG_INVOICE only if mode not provided
-    if (!mode) {
-      where.AND = [
-        { metadata: { path: ['mode'], equals: 'ORG_INVOICE' } as any },
-      ];
+    if (mode) {
+      where.metadata = { path: ['mode'], equals: mode } as any;
     }
+    // No default mode filter to ensure all payments show up by default
 
     const payments = await this.subscriptionService['prisma'].payment.findMany({
       where,

@@ -428,17 +428,38 @@ export class SubscriptionService {
     const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
     if (!payment) throw new NotFoundException('Payment not found');
     const meta: any = payment.metadata || {};
-    if (meta.mode !== 'ORG_INVOICE') throw new BadRequestException('Not an ORG_INVOICE payment');
+    
     const newMeta = { ...meta, awaitingApproval: false, approved: true, approvedAt: new Date().toISOString(), approvedBy: approverUserId };
-    await this.prisma.payment.update({ where: { id: payment.id }, data: { status: (PaymentStatus as any).PAID ?? 'PAID', paidAt: new Date(), metadata: newMeta } as any });
-    await this.activateBulkFromOrgInvoice({
-      labelId: meta.labelId,
-      dapurUnitIds: Array.isArray(meta.dapurUnitIds) ? meta.dapurUnitIds : [],
-      userIds: Array.isArray(meta.userIds) ? meta.userIds : [],
-      pricePerUser: meta.pricePerUser || 0,
-      currency: meta.currency || 'IDR',
-      period: meta.period || 'MONTHLY',
+    await this.prisma.payment.update({ 
+      where: { id: payment.id }, 
+      data: { status: (PaymentStatus as any).PAID ?? 'PAID', paidAt: new Date(), metadata: newMeta } as any 
     });
+
+    if (meta.mode === 'SINGLE_SUBSCRIPTION' && payment.subscriptionId) {
+      const period = meta.period || 'MONTHLY';
+      const now = new Date();
+      const periodEnd = this.calculatePeriodEnd(now, period);
+
+      await this.prisma.subscription.update({
+        where: { id: payment.subscriptionId },
+        data: {
+          status: SubscriptionStatus.ACTIVE,
+          startedAt: now,
+          currentPeriodStart: now,
+          currentPeriodEnd: periodEnd,
+        }
+      });
+    } else if (meta.mode === 'ORG_INVOICE') {
+      await this.activateBulkFromOrgInvoice({
+        labelId: meta.labelId,
+        dapurUnitIds: Array.isArray(meta.dapurUnitIds) ? meta.dapurUnitIds : [],
+        userIds: Array.isArray(meta.userIds) ? meta.userIds : [],
+        pricePerUser: meta.pricePerUser || 0,
+        currency: meta.currency || 'IDR',
+        period: meta.period || 'MONTHLY',
+      });
+    }
+    
     return { success: true };
   }
 
@@ -448,13 +469,23 @@ export class SubscriptionService {
     const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
     if (!payment) throw new NotFoundException('Payment not found');
     const meta: any = payment.metadata || {};
-    if (meta.mode !== 'ORG_INVOICE') throw new BadRequestException('Not an ORG_INVOICE payment');
-    await this.prisma.payment.update({ where: { id: payment.id }, data: { status: PaymentStatus.FAILED, failedAt: new Date(), failureReason: reason } });
+    
+    await this.prisma.payment.update({ 
+      where: { id: payment.id }, 
+      data: { status: PaymentStatus.FAILED, failedAt: new Date(), failureReason: reason } 
+    });
+
     if (expireSubscriptions) {
-      let dapurUnitIds: string[] = Array.isArray(meta.dapurUnitIds) ? meta.dapurUnitIds : [];
-      if (dapurUnitIds.length === 0 && Array.isArray(meta.userIds)) {
-        dapurUnitIds = await this.mapLegacyUserIdsToDapurUnitIds(meta.userIds);
+      let dapurUnitIds: string[] = [];
+      if (meta.mode === 'SINGLE_SUBSCRIPTION' && meta.dapurUnitId) {
+        dapurUnitIds = [meta.dapurUnitId];
+      } else if (meta.mode === 'ORG_INVOICE') {
+        dapurUnitIds = Array.isArray(meta.dapurUnitIds) ? meta.dapurUnitIds : [];
+        if (dapurUnitIds.length === 0 && Array.isArray(meta.userIds)) {
+          dapurUnitIds = await this.mapLegacyUserIdsToDapurUnitIds(meta.userIds);
+        }
       }
+
       for (const dapurUnitId of dapurUnitIds) {
         const existing = await this.prisma.subscription.findUnique({ where: { dapurUnitId } });
         if (existing) {
@@ -480,7 +511,7 @@ export class SubscriptionService {
     pricePerUser: number;
     totalAmount?: number;
     currency?: string;
-    period: 'MONTHLY' | 'YEARLY';
+    period: 'MONTHLY' | 'YEARLY' | 'TWO_YEARS';
     provider?: 'xendit' | 'manual';
     description?: string;
     // manual invoice fields
@@ -576,7 +607,7 @@ export class SubscriptionService {
     userIds?: string[];
     pricePerUser: number;
     currency?: string;
-    period: 'MONTHLY' | 'YEARLY';
+    period: 'MONTHLY' | 'YEARLY' | 'TWO_YEARS';
   }) {
     let { labelId, pricePerUser, currency = 'IDR', period } = params;
     let dapurUnitIds = params.dapurUnitIds?.length ? params.dapurUnitIds : [];
@@ -638,7 +669,7 @@ export class SubscriptionService {
   async createOrgInvoiceRenewalFromPayment(params: {
     adminUserId: string;
     previousPaymentId: string;
-    period?: 'MONTHLY' | 'YEARLY';
+    period?: 'MONTHLY' | 'YEARLY' | 'TWO_YEARS';
     currency?: string;
     totalAmount?: number;
     pricePerUser?: number;
@@ -895,14 +926,15 @@ export class SubscriptionService {
     }
 
     // Check plan access (higher plans have access to lower plan features)
-    const planLevels: Record<SubscriptionPlan, number> = {
+    const planLevels: Record<string, number> = {
       [SubscriptionPlan.TRIAL]: 1,
       [SubscriptionPlan.GOLD_MONTHLY]: 2,
       [SubscriptionPlan.GOLD_YEARLY]: 3,
+      ['GOLD_TWO_YEARS']: 3,
       [SubscriptionPlan.ENTERPRISE_CUSTOM]: 4,
     }
 
-    return planLevels[subscription.plan] >= planLevels[requiredPlan]
+    return (planLevels[subscription.plan] || 0) >= (planLevels[requiredPlan] || 0)
   }
   
   async getAllSubscriptions() {
@@ -1260,25 +1292,32 @@ export class SubscriptionService {
     });
   }
 
+  async getAllDapurUnits() {
+    return this.prisma.dapurUnit.findMany({
+      include: {
+        projectOwner: { select: { id: true, fullname: true, email: true } },
+        adminDapur: { select: { id: true, fullname: true, email: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
   /**
-   * Bulk subscribe Dapur units to ENTERPRISE_CUSTOM (label must already link each unit via LabelDapur).
+   * Berlangganan (Subscribe) Unit Dapur ke paket GOLD (ENTERPRISE_CUSTOM) - Pembayaran MANUAL.
    */
-  async bulkSubscribeDapursForLabel(params: {
-    labelId: string;
+  async subscribeDapurUnits(params: {
     dapurUnitIds: string[];
     price: number;
     currency?: string;
-    autoActivate?: boolean;
-    period?: 'MONTHLY' | 'YEARLY';
+    period?: 'MONTHLY' | 'YEARLY' | 'TWO_YEARS';
   }) {
-    const { labelId, dapurUnitIds, price, currency = 'IDR', autoActivate = true, period = 'MONTHLY' } = params;
+    let { dapurUnitIds = [], price, currency = 'IDR', period = 'MONTHLY' } = params;
 
-    const label = await (this.prisma as any).enterpriseLabel.findUnique({ where: { id: labelId } });
-    if (!label) throw new NotFoundException('Enterprise label not found');
-    await this.ensureDapursBelongToLabel(labelId, dapurUnitIds);
+    // Map period to correct SubscriptionPlan
+    let planToSet: SubscriptionPlan = SubscriptionPlan.GOLD_MONTHLY;
+    if (period === 'YEARLY') planToSet = SubscriptionPlan.GOLD_YEARLY;
+    else if (period === 'TWO_YEARS') planToSet = (SubscriptionPlan as any).GOLD_TWO_YEARS ?? SubscriptionPlan.GOLD_YEARLY;
 
-    const ENTERPRISE_CUSTOM_PLAN = 'ENTERPRISE_CUSTOM' as SubscriptionPlan;
-    const now = new Date();
     const results: Array<{ dapurUnitId: string; subscriptionId: string; paymentId?: string }> = [];
 
     for (const dapurUnitId of dapurUnitIds) {
@@ -1290,91 +1329,81 @@ export class SubscriptionService {
 
       const existing = await this.prisma.subscription.findUnique({ where: { dapurUnitId } });
       let subscription;
-      const periodEnd = this.calculatePeriodEnd(now, period);
+
+      // Status PAST_DUE for manual payment (implies payment is needed)
+      const status = SubscriptionStatus.PAST_DUE;
 
       if (existing) {
         subscription = await this.prisma.subscription.update({
           where: { id: existing.id },
           data: {
-            plan: ENTERPRISE_CUSTOM_PLAN,
-            status: autoActivate ? SubscriptionStatus.ACTIVE : SubscriptionStatus.PAUSED,
-            startedAt: autoActivate ? now : existing.startedAt ?? now,
-            currentPeriodStart: autoActivate ? now : existing.currentPeriodStart,
-            currentPeriodEnd: autoActivate ? periodEnd : existing.currentPeriodEnd,
+            plan: planToSet,
+            status: status,
             customPrice: price,
             customCurrency: currency as any,
-            labelId,
+            // Reset dates until payment is approved
+            startedAt: null,
+            currentPeriodStart: null,
+            currentPeriodEnd: null,
           } as any,
         });
       } else {
         subscription = await this.prisma.subscription.create({
           data: {
             dapurUnitId,
-            plan: ENTERPRISE_CUSTOM_PLAN,
-            status: autoActivate ? SubscriptionStatus.ACTIVE : SubscriptionStatus.PAUSED,
-            startedAt: autoActivate ? now : undefined,
-            currentPeriodStart: autoActivate ? now : undefined,
-            currentPeriodEnd: autoActivate ? periodEnd : undefined,
+            plan: planToSet,
+            status: status,
             customPrice: price,
             customCurrency: currency as any,
-            labelId,
           } as any,
         });
       }
 
       await this.propagateSubscriptionToDapurUsers(dapurUnitId, subscription.id);
 
+      // Create manual payment record
       const payment = await this.paymentService.createPayment({
         userId: dapur.projectOwnerId,
         amount: price,
-        description: `Enterprise Custom (${label.name}) ${period} • ${dapur.name || dapurUnitId}`,
-        paymentMethod: autoActivate ? 'manual' : 'xendit',
+        description: `Langganan Unit Dapur: ${dapur.name || dapurUnitId} (${period})`,
+        paymentMethod: 'manual',
         currency,
         subscriptionId: subscription.id,
+        metadata: {
+          mode: 'SINGLE_SUBSCRIPTION',
+          awaitingApproval: true, // This ensures it shows up for admin review
+          period,
+          dapurUnitId,
+          plan: planToSet,
+        },
       });
 
-      if (!autoActivate) {
-        try {
-          const paymentLink = (payment as any)?.paymentLink;
-          await (this.prisma as any).notification.create({
-            data: {
-              userId: dapur.projectOwnerId,
-              title: 'Pembayaran diperlukan',
-              message: paymentLink
-                ? `Langganan ENTERPRISE_CUSTOM untuk dapur "${dapur.name}" (label ${label.name}) telah dibuat. Silakan selesaikan pembayaran: ${paymentLink}`
-                : `Langganan ENTERPRISE_CUSTOM untuk dapur "${dapur.name}" telah dibuat. Silakan selesaikan pembayaran Anda.`,
-              type: 'PAYMENT_REQUIRED',
-              relatedId: subscription.id,
-              metadata: { paymentId: (payment as any)?.id, paymentLink, labelId, period, dapurUnitId } as any,
-            },
-          });
-        } catch (e) {
-          this.logger.warn(`Failed payment notification for dapur ${dapurUnitId}: ${e?.message}`);
-        }
-      }
-
-      if (autoActivate) {
-        await this.prisma.subscription.update({
-          where: { id: subscription.id },
+      try {
+        await (this.prisma as any).notification.create({
           data: {
-            status: SubscriptionStatus.ACTIVE,
-            startedAt: now,
-            currentPeriodStart: now,
-            currentPeriodEnd: periodEnd,
+            userId: dapur.projectOwnerId,
+            title: 'Pembayaran Langganan Diperlukan',
+            message: `Langganan untuk dapur "${dapur.name}" telah dibuat. Silakan hubungi admin untuk konfirmasi pembayaran manual sebesar ${currency} ${price.toLocaleString('id-ID')}.`,
+            type: 'PAYMENT_REQUIRED',
+            relatedId: subscription.id,
+            metadata: { paymentId: (payment as any)?.id, period, dapurUnitId } as any,
           },
         });
+      } catch (e) {
+        this.logger.warn(`Failed payment notification for dapur ${dapurUnitId}: ${e?.message}`);
       }
 
       results.push({ dapurUnitId, subscriptionId: subscription.id, paymentId: (payment as any)?.id });
     }
 
-    this.logger.log(`Bulk subscribe ${dapurUnitIds.length} dapur units to ENTERPRISE_CUSTOM under label ${labelId}`);
-    return { labelId, count: dapurUnitIds.length, results };
+    this.logger.log(`Subscribe ${dapurUnitIds.length} dapur units to GOLD plan (Manual Payment)`);
+    return { count: dapurUnitIds.length, results };
   }
 
-  private calculatePeriodEnd(startDate: Date, period: 'MONTHLY' | 'YEARLY') {
+  private calculatePeriodEnd(startDate: Date, period: 'MONTHLY' | 'YEARLY' | 'TWO_YEARS') {
     const endDate = new Date(startDate);
-    if (period === 'YEARLY') endDate.setFullYear(endDate.getFullYear() + 1);
+    if (period === 'TWO_YEARS') endDate.setFullYear(endDate.getFullYear() + 2);
+    else if (period === 'YEARLY') endDate.setFullYear(endDate.getFullYear() + 1);
     else endDate.setMonth(endDate.getMonth() + 1);
     return endDate;
   }

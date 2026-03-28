@@ -14,10 +14,10 @@ export default function CreateBillingPlanPage() {
 
   const [providerUsd, setProviderUsd] = useState<boolean>(true);
   const [providerIdr, setProviderIdr] = useState<boolean>(true);
-  const [plan, setPlan] = useState<'GOLD_MONTHLY' | 'GOLD_YEARLY' | 'ENTERPRISE_CUSTOM'>('GOLD_MONTHLY');
+  const [plan, setPlan] = useState<'GOLD_MONTHLY' | 'GOLD_YEARLY' | 'GOLD_TWO_YEARS' | 'ENTERPRISE_CUSTOM'>('GOLD_MONTHLY');
   const [priceUSD, setPriceUSD] = useState<number>(0);
   const [priceIDR, setPriceIDR] = useState<number>(0);
-  const [period, setPeriod] = useState<'MONTHLY' | 'YEARLY'>('MONTHLY');
+  const [period, setPeriod] = useState<'MONTHLY' | 'YEARLY' | 'TWO_YEARS'>('MONTHLY');
   const [name, setName] = useState<string>('');
 
   const handleSubmit = async () => {
@@ -82,14 +82,15 @@ export default function CreateBillingPlanPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Plan</label>
                   <select
-                    value={plan}
-                    onChange={(e) => setPlan(e.target.value as any)}
-                    className="border rounded px-3 py-2 w-full text-gray-900"
-                  >
-                    <option value="GOLD_MONTHLY">Gold Monthly</option>
-                    <option value="GOLD_YEARLY">Gold Yearly</option>
-                    <option value="ENTERPRISE_CUSTOM">Enterprise Custom (use Bulk)</option>
-                  </select>
+                      value={plan}
+                      onChange={(e) => setPlan(e.target.value as any)}
+                      className="border rounded px-3 py-2 w-full text-gray-900"
+                    >
+                      <option value="GOLD_MONTHLY">Gold 1 Bulan</option>
+                      <option value="GOLD_YEARLY">Gold 1 Tahun</option>
+                      <option value="GOLD_TWO_YEARS">Gold 2 Tahun</option>
+                      <option value="ENTERPRISE_CUSTOM">Enterprise Custom (use Bulk)</option>
+                    </select>
                   {plan === 'ENTERPRISE_CUSTOM' && (
                     <p className="mt-2 text-xs text-yellow-700 bg-yellow-50 p-2 rounded">Enterprise Custom dikelola via Bulk Subscribe pada halaman Subscriptions, bukan di sini.</p>
                   )}
@@ -153,8 +154,9 @@ export default function CreateBillingPlanPage() {
                     onChange={(e) => setPeriod(e.target.value as any)}
                     className="border rounded px-3 py-2 w-full text-gray-900"
                   >
-                    <option value="MONTHLY">Monthly</option>
-                    <option value="YEARLY">Yearly</option>
+                    <option value="MONTHLY">1 Bulan</option>
+                    <option value="YEARLY">1 Tahun</option>
+                    <option value="TWO_YEARS">2 Tahun</option>
                   </select>
                 </div>
                 <div>

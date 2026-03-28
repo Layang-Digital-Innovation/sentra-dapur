@@ -86,16 +86,16 @@ export class PaymentService {
       },
     });
 
-    // NEW: Handle MANUAL provider by immediately marking as PAID
+    // NEW: Handle MANUAL provider by immediately marking as PAID or AWAITING_APPROVAL
     if (provider === MANUAL_PROVIDER) {
       const awaitingApproval = !!(data.metadata && (data.metadata.awaitingApproval === true));
       return this.prisma.payment.update({
         where: { id: payment.id },
         data: {
-          status: awaitingApproval ? (PaymentStatus as any).AWAITING_APPROVAL ?? PaymentStatus.PENDING : PaymentStatus.PAID,
+          status: awaitingApproval ? (PaymentStatus as any).AWAITING_APPROVAL : PaymentStatus.PAID,
           paidAt: awaitingApproval ? null : new Date(),
           metadata: {
-            note: 'Manual payment (Enterprise Label)',
+            note: 'Manual payment',
             description: data.description,
             ...(data.metadata || {}),
           } as any,

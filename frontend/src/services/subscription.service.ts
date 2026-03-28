@@ -46,6 +46,27 @@ export const subscriptionService = {
     return data;
   },
 
+  async subscribeDapurUnits(payload: {
+    dapurUnitIds: string[];
+    price: number;
+    currency: string;
+    period: 'MONTHLY' | 'YEARLY' | 'TWO_YEARS';
+  }) {
+    const { data } = await axiosInstance.post('/subscription/dapur-units/subscribe', payload);
+    return data;
+  },
+
+  async getAllDapurUnits() {
+    const { data } = await axiosInstance.get('/subscription/dapur-units/all');
+    return data as Array<{
+      id: string;
+      name: string;
+      location?: string | null;
+      projectOwner?: { id: string; fullname?: string; email: string };
+      adminDapur?: { id: string; fullname?: string; email: string };
+    }>;
+  },
+
   async bulkSubscribeDapursForLabel(payload: {
     labelId: string;
     dapurUnitIds: string[];
@@ -54,8 +75,13 @@ export const subscriptionService = {
     period: 'MONTHLY' | 'YEARLY';
     autoActivate?: boolean;
   }) {
-    const { data } = await axiosInstance.post('/subscription/enterprise/label/investors/bulk-subscribe', payload);
-    return data;
+    // Deprecated: use subscribeDapurUnits instead
+    return this.subscribeDapurUnits({
+      dapurUnitIds: payload.dapurUnitIds,
+      price: payload.price,
+      currency: payload.currency,
+      period: payload.period
+    });
   },
 
   async getDapurUnitsForEnterpriseLabel(labelId: string) {
@@ -124,12 +150,12 @@ export const subscriptionService = {
   },
 
   // Create PayPal billing plan for subscriptions (SUPER_ADMIN only)
-  async createBillingPlan(payload: { provider?: 'PAYPAL' | 'XENDIT'; currency?: 'USD' | 'IDR'; plan: 'GOLD_MONTHLY' | 'GOLD_YEARLY' | string; price: number; period?: 'MONTHLY' | 'YEARLY'; name?: string }) {
+  async createBillingPlan(payload: { provider?: 'PAYPAL' | 'XENDIT'; currency?: 'USD' | 'IDR'; plan: 'GOLD_MONTHLY' | 'GOLD_YEARLY' | 'GOLD_TWO_YEARS' | string; price: number; period?: 'MONTHLY' | 'YEARLY' | 'TWO_YEARS'; name?: string }) {
     const { data } = await axiosInstance.post('/subscription/billing-plan/create', payload);
     return data;
   },
 
-  async updateBillingPlan(id: string, payload: { name?: string; description?: string; price?: number; currency?: 'USD' | 'IDR' | string; period?: 'MONTHLY' | 'YEARLY'; status?: string; plan?: 'GOLD_MONTHLY' | 'GOLD_YEARLY' | 'ENTERPRISE_CUSTOM' | string; provider?: 'PAYPAL' | 'XENDIT' | string }) {
+  async updateBillingPlan(id: string, payload: { name?: string; description?: string; price?: number; currency?: 'USD' | 'IDR' | string; period?: 'MONTHLY' | 'YEARLY' | 'TWO_YEARS'; status?: string; plan?: 'GOLD_MONTHLY' | 'GOLD_YEARLY' | 'GOLD_TWO_YEARS' | 'ENTERPRISE_CUSTOM' | string; provider?: 'PAYPAL' | 'XENDIT' | string }) {
     const { data } = await axiosInstance.put(`/subscription/billing-plan/${id}`, payload);
     return data;
   },
@@ -147,7 +173,7 @@ export const subscriptionService = {
   // Unified checkout for subscription and one-time payments
   async checkout(payload: {
     type: 'subscription' | 'one_time';
-    plan?: 'TRIAL' | 'GOLD_MONTHLY' | 'GOLD_YEARLY' | 'ENTERPRISE_CUSTOM' | string;
+    plan?: 'TRIAL' | 'GOLD_MONTHLY' | 'GOLD_YEARLY' | 'GOLD_TWO_YEARS' | 'ENTERPRISE_CUSTOM' | string;
     price?: number;
     currency?: 'IDR' | 'USD';
     provider?: 'xendit' | 'paypal';

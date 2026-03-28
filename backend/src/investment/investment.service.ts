@@ -1429,6 +1429,15 @@ export class InvestmentService {
           0
         );
 
+        // Ambil semua ArusKas untuk menghitung saldo saat ini
+        const arusKas = await this.prisma.arusKas.findMany({
+          where: { dapurUnitId: dapur.id },
+          select: { type: true, amount: true }
+        });
+        const currentBalance = arusKas.reduce((acc, curr) => {
+          return curr.type === 'IN' ? acc + curr.amount : acc - curr.amount;
+        }, 0);
+
         return {
           stakeId: stake.id,
           dapurUnitId: dapur.id,
@@ -1442,6 +1451,7 @@ export class InvestmentService {
           profitSharingPct: stake.profitSharingPct,
           profitSharingPctPreBEP: stake.profitSharingPctPreBEP,
           profitSharingPctPostBEP: stake.profitSharingPctPostBEP,
+          currentBalance, // Tambahkan saldo saat ini
           // Total profit nyata (dari laporan admin pusat)
           totalProfitReceived,
           dividendCount: dividendDistributions.length,

@@ -194,7 +194,7 @@ export default function AdminPusatDapurDetailPage() {
 
   const externalArusKas = arusKas.filter((k: any) => k.category !== 'INTERNAL_TRANSFER');
   const totalIn = (externalArusKas.filter((k: any) => k.type === "IN").reduce((a: number, b: any) => a + b.amount, 0) || 0) + 
-                  (cashbacks.reduce((a, b) => a + b.amount, 0) || 0);
+                  (user?.user.role === "ADMIN_PUSAT" || user?.user.role === "SUPER_ADMIN" ? cashbacks.reduce((a, b) => a + b.amount, 0) : 0);
   const totalOut = externalArusKas.filter((k: any) => k.type === "OUT").reduce((a: number, b: any) => a + b.amount, 0) || 0;
   const netBalance = totalIn - totalOut;
 
@@ -394,55 +394,57 @@ export default function AdminPusatDapurDetailPage() {
         </div>
       </div>
 
-      {/* Supplier Cashback Section — ONLY Admin Pusat & PO */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-amber-50 to-orange-50">
-          <div>
-            <h2 className="font-bold text-orange-900 flex items-center gap-2">
-              <FiDollarSign className="h-4 w-4" /> Pencatatan Cashback Supplier
-            </h2>
-            <p className="text-[10px] text-orange-600 font-medium">PENDAPATAN TERTUTUP (KHUSUS PUSAT & PO)</p>
+      {/* Supplier Cashback Section — ONLY Admin Pusat & SUPER ADMIN */}
+      {(user?.user.role === "ADMIN_PUSAT" || user?.user.role === "SUPER_ADMIN") && (
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-amber-50 to-orange-50">
+            <div>
+              <h2 className="font-bold text-orange-900 flex items-center gap-2">
+                <FiDollarSign className="h-4 w-4" /> Pencatatan Cashback Supplier
+              </h2>
+              <p className="text-[10px] text-orange-600 font-medium">PENDAPATAN TERTUTUP (KHUSUS PUSAT)</p>
+            </div>
+            <button 
+              onClick={() => setShowCashbackModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white text-xs font-bold rounded-lg hover:bg-orange-700 transition shadow-sm"
+            >
+              <FiPlus className="h-3.5 w-3.5" /> Catat Cashback
+            </button>
           </div>
-          <button 
-            onClick={() => setShowCashbackModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white text-xs font-bold rounded-lg hover:bg-orange-700 transition shadow-sm"
-          >
-            <FiPlus className="h-3.5 w-3.5" /> Catat Cashback
-          </button>
-        </div>
-        <div className="divide-y divide-gray-100">
-          {cashbacks.length > 0 ? (
-            cashbacks.map((cb: any) => (
-              <div key={cb.id} className="p-5 flex items-center justify-between hover:bg-gray-50 transition border-l-4 border-orange-400">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-full bg-orange-100 text-orange-600">
-                    <FiTrendingUp className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-900 text-sm">
-                      Cashback dari {cb.supplierName || 'Supplier'}
-                    </p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <p className="text-xs text-gray-400">
-                        {new Date(cb.transactionDate).toLocaleDateString("id-ID")}
+          <div className="divide-y divide-gray-100">
+            {cashbacks.length > 0 ? (
+              cashbacks.map((cb: any) => (
+                <div key={cb.id} className="p-5 flex items-center justify-between hover:bg-gray-50 transition border-l-4 border-orange-400">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-full bg-orange-100 text-orange-600">
+                      <FiTrendingUp className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900 text-sm">
+                        Cashback dari {cb.supplierName || 'Supplier'}
                       </p>
-                      {cb.description && <span className="text-xs text-gray-500 italic">· {cb.description}</span>}
-                      {cb.purchaseOrderId && (
-                        <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-black">PO #{cb.purchaseOrderId.slice(0,8).toUpperCase()}</span>
-                      )}
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <p className="text-xs text-gray-400">
+                          {new Date(cb.transactionDate).toLocaleDateString("id-ID")}
+                        </p>
+                        {cb.description && <span className="text-xs text-gray-500 italic">· {cb.description}</span>}
+                        {cb.purchaseOrderId && (
+                          <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-black">PO #{cb.purchaseOrderId.slice(0,8).toUpperCase()}</span>
+                        )}
+                      </div>
                     </div>
                   </div>
+                  <span className="font-bold text-sm text-green-600">
+                    + Rp {cb.amount.toLocaleString("id-ID")}
+                  </span>
                 </div>
-                <span className="font-bold text-sm text-green-600">
-                  + Rp {cb.amount.toLocaleString("id-ID")}
-                </span>
-              </div>
-            ))
-          ) : (
-            <div className="p-8 text-center text-gray-400 text-sm">Belum ada catatan cashback supplier.</div>
-          )}
+              ))
+            ) : (
+              <div className="p-8 text-center text-gray-400 text-sm">Belum ada catatan cashback supplier.</div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
 
       {/* Investor Management */}
@@ -474,112 +476,117 @@ export default function AdminPusatDapurDetailPage() {
               <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
                 <tr>
                   <th className="px-4 py-3 text-left font-semibold">Investor</th>
-                  <th className="px-4 py-3 text-right font-semibold">Total Nilai Investasi</th>
-                  <th className="px-4 py-3 text-center font-semibold">% Profit (Umum)</th>
-                  <th className="px-4 py-3 text-center font-semibold">% Sebelum BEP</th>
-                  <th className="px-4 py-3 text-center font-semibold">% Setelah BEP</th>
+                  <th className="px-4 py-3 text-right font-semibold">Total Investasi</th>
+                  <th className="px-4 py-3 text-center font-semibold">% Sblm BEP</th>
+                  <th className="px-4 py-3 text-right font-semibold">Bagi Hasil (Sblm)</th>
+                  <th className="px-4 py-3 text-center font-semibold">% Sth BEP</th>
+                  <th className="px-4 py-3 text-right font-semibold">Bagi Hasil (Sth)</th>
                   <th className="px-4 py-3 text-center font-semibold">Hapus</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {rows.map((row, idx) => (
-                  <tr key={idx} className="hover:bg-gray-50">
-                    {/* Investor select */}
-                    <td className="px-4 py-3">
-                      <select
-                        value={row.investorId}
-                        onChange={e => updateRow(idx, "investorId", e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 min-w-[200px]"
-                      >
-                        <option value="">-- Pilih Investor --</option>
-                        {allInvestors.map(inv => (
-                          <option key={inv.id} value={inv.id}>
-                            {inv.fullname || inv.fullName || inv.email}
-                          </option>
-                        ))}
-                      </select>
-                      {row.email && (
-                        <p className="text-xs text-gray-400 mt-1 pl-1">{row.email}</p>
-                      )}
-                    </td>
+                {rows.map((row, idx) => {
+                  const nominalPreBEP = Math.max(0, netBalance) * ((row.profitSharingPctPreBEP || 0) / 100);
+                  const nominalPostBEP = Math.max(0, netBalance) * ((row.profitSharingPctPostBEP || 0) / 100);
 
-                    {/* Total Nilai Investasi */}
-                    <td className="px-4 py-3">
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">Rp</span>
-                        <input
-                          type="number"
-                          min={0}
-                          value={row.amount || ""}
-                          onChange={e => updateRow(idx, "amount", Number(e.target.value))}
-                          className="w-full border border-gray-300 rounded-lg pl-8 pr-3 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-slate-900 min-w-[160px]"
-                          placeholder="0"
-                        />
-                      </div>
-                    </td>
+                  return (
+                    <tr key={idx} className="hover:bg-gray-50">
+                      {/* Investor select */}
+                      <td className="px-4 py-3">
+                        <select
+                          value={row.investorId}
+                          onChange={e => updateRow(idx, "investorId", e.target.value)}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 min-w-[180px]"
+                        >
+                          <option value="">-- Pilih Investor --</option>
+                          {allInvestors.map(inv => (
+                            <option key={inv.id} value={inv.id}>
+                              {inv.fullname || inv.fullName || inv.email}
+                            </option>
+                          ))}
+                        </select>
+                        {row.email && (
+                          <p className="text-xs text-gray-400 mt-1 pl-1">{row.email}</p>
+                        )}
+                      </td>
 
-                    {/* % Profit Sharing Umum */}
-                    <td className="px-4 py-3">
-                      <div className="relative">
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          step={0.1}
-                          value={row.profitSharingPct || ""}
-                          onChange={e => updateRow(idx, "profitSharingPct", Number(e.target.value))}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-slate-900 min-w-[100px]"
-                          placeholder="0"
-                        />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span>
-                      </div>
-                    </td>
+                      {/* Total Nilai Investasi */}
+                      <td className="px-4 py-3">
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">Rp</span>
+                          <input
+                            type="number"
+                            min={0}
+                            value={row.amount || ""}
+                            onChange={e => updateRow(idx, "amount", Number(e.target.value))}
+                            className="w-full border border-gray-300 rounded-lg pl-8 pr-3 py-2 text-sm text-right focus:outline-none focus:ring-2 focus:ring-slate-900 min-w-[140px]"
+                            placeholder="0"
+                          />
+                        </div>
+                      </td>
 
-                    {/* % Sebelum BEP */}
-                    <td className="px-4 py-3">
-                      <div className="relative">
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          step={0.1}
-                          value={row.profitSharingPctPreBEP || ""}
-                          onChange={e => updateRow(idx, "profitSharingPctPreBEP", Number(e.target.value))}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-amber-500 bg-yellow-50 min-w-[100px]"
-                          placeholder="0"
-                        />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span>
-                      </div>
-                    </td>
+                      {/* % Sebelum BEP */}
+                      <td className="px-4 py-3">
+                        <div className="relative">
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step={0.1}
+                            value={row.profitSharingPctPreBEP || ""}
+                            onChange={e => updateRow(idx, "profitSharingPctPreBEP", Number(e.target.value))}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-amber-500 bg-yellow-50 min-w-[80px]"
+                            placeholder="0"
+                          />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]">%</span>
+                        </div>
+                      </td>
 
-                    {/* % Setelah BEP */}
-                    <td className="px-4 py-3">
-                      <div className="relative">
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          step={0.1}
-                          value={row.profitSharingPctPostBEP || ""}
-                          onChange={e => updateRow(idx, "profitSharingPctPostBEP", Number(e.target.value))}
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-green-500 bg-green-50 min-w-[100px]"
-                          placeholder="0"
-                        />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span>
-                      </div>
-                    </td>
+                      {/* Nominal Sebelum BEP */}
+                      <td className="px-4 py-3 text-right">
+                        <div className="text-xs font-bold text-amber-700">
+                          {fmt(nominalPreBEP)}
+                        </div>
+                        <div className="text-[10px] text-gray-400 italic">Estimasi Sblm BEP</div>
+                      </td>
 
-                    {/* Delete */}
-                    <td className="px-4 py-3 text-center">
-                      <button
-                        onClick={() => removeRow(idx)}
-                        className="p-2 text-red-400 hover:bg-red-50 rounded-lg transition"
-                      >
-                        <FiTrash2 className="h-4 w-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                      {/* % Setelah BEP */}
+                      <td className="px-4 py-3">
+                        <div className="relative">
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step={0.1}
+                            value={row.profitSharingPctPostBEP || ""}
+                            onChange={e => updateRow(idx, "profitSharingPctPostBEP", Number(e.target.value))}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-green-500 bg-green-50 min-w-[80px]"
+                            placeholder="0"
+                          />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]">%</span>
+                        </div>
+                      </td>
+
+                      {/* Nominal Setelah BEP */}
+                      <td className="px-4 py-3 text-right">
+                        <div className="text-xs font-bold text-green-700">
+                          {fmt(nominalPostBEP)}
+                        </div>
+                        <div className="text-[10px] text-gray-400 italic">Estimasi Sth BEP</div>
+                      </td>
+
+                      {/* Delete */}
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => removeRow(idx)}
+                          className="p-2 text-red-400 hover:bg-red-50 rounded-lg transition"
+                        >
+                          <FiTrash2 className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
 
               {/* Footer summary */}
@@ -591,14 +598,17 @@ export default function AdminPusatDapurDetailPage() {
                   <td className="px-4 py-3 text-right font-bold text-slate-900 text-sm">
                     {fmt(totalInvestasi)}
                   </td>
-                  <td className="px-4 py-3 text-center font-bold text-slate-900 text-sm">
-                    {rows.reduce((s, r) => s + (Number(r.profitSharingPct) || 0), 0).toFixed(1)}%
-                  </td>
                   <td className="px-4 py-3 text-center font-bold text-amber-700 text-sm">
                     {rows.reduce((s, r) => s + (Number(r.profitSharingPctPreBEP) || 0), 0).toFixed(1)}%
                   </td>
+                  <td className="px-4 py-3 text-right font-bold text-amber-700 text-sm">
+                    {fmt(rows.reduce((s, r) => s + (Math.max(0, netBalance) * ((r.profitSharingPctPreBEP || 0) / 100)), 0))}
+                  </td>
                   <td className="px-4 py-3 text-center font-bold text-green-700 text-sm">
                     {rows.reduce((s, r) => s + (Number(r.profitSharingPctPostBEP) || 0), 0).toFixed(1)}%
+                  </td>
+                  <td className="px-4 py-3 text-right font-bold text-green-700 text-sm">
+                    {fmt(rows.reduce((s, r) => s + (Math.max(0, netBalance) * ((r.profitSharingPctPostBEP || 0) / 100)), 0))}
                   </td>
                   <td />
                 </tr>
@@ -617,6 +627,9 @@ export default function AdminPusatDapurDetailPage() {
             <div className="flex items-center gap-1.5">
               <div className="w-3 h-3 rounded bg-green-200" />
               <span><b>% Setelah BEP:</b> Persentase bagi hasil investor setelah melampaui Break Even Point</span>
+            </div>
+            <div className="flex items-center gap-1.5 ml-auto font-medium">
+              <span>* Nominal bagi hasil dihitung berdasarkan <b>Saldo Bersih</b> dapur saat ini.</span>
             </div>
           </div>
         )}

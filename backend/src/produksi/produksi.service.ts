@@ -50,11 +50,6 @@ export class ProduksiService {
     fat?: number;
     dapurUnitId?: string;
   }, user: any) {
-    const isPusat = ['ADMIN_PUSAT', 'SUPER_ADMIN'].includes(user.role);
-    if (!isPusat && !data.dapurUnitId) {
-      throw new BadRequestException('dapurUnitId wajib diisi untuk role ini');
-    }
-
     return this.prisma.menu.create({
       data,
       include: { ingredients: { include: { portionType: true } } },
@@ -73,10 +68,6 @@ export class ProduksiService {
     }[];
     dapurUnitId?: string;
   }, user: any) {
-    const isPusat = ['ADMIN_PUSAT', 'SUPER_ADMIN'].includes(user.role);
-    if (!isPusat && !data.dapurUnitId) {
-      throw new BadRequestException('dapurUnitId wajib diisi untuk role ini');
-    }
     const types = await this.prisma.portionType.findMany();
     const typeMap = new Map(types.map(t => [t.name.toLowerCase(), t.id]));
 

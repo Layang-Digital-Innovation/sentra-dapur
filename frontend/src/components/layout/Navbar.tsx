@@ -41,15 +41,15 @@ const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
   const { user, logout } = useAuth();
 
-  const dashboardUrl = user ? getDashboardUrl(user.user.role) : '/dashboard';
+  const dashboardUrl = user ? getDashboardUrl(user.user.role as Role) : '/dashboard';
 
   return (
     <nav className="bg-white shadow-sm fixed w-full z-50">
       <div className="max-w-7xl mx-auto px-6 sm:px-10 lg:px-16">
         <div className="flex justify-between h-16">
           <div className="flex items-center">
-            <Link href="/" className="flex-shrink-0 flex items-center pt-2">
-              <Logo className="h-12" />
+            <Link href="/" className="flex-shrink-0 flex items-center">
+              <Logo className="h-14" />
             </Link>
           </div>
 

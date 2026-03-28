@@ -23,7 +23,7 @@ export class DapurController {
     @Param('id') id: string,
     @Body('adminDapurId') adminDapurId: string
   ) {
-    return this.dapurService.assignAdminDapur(id, req.user.id, adminDapurId);
+    return this.dapurService.assignAdminDapur(id, req.user.id, req.user.role, adminDapurId);
   }
 
   @Roles('PROJECT_OWNER', 'ADMIN_PUSAT')
@@ -44,12 +44,12 @@ export class DapurController {
     @Param('id') id: string,
     @Body() data: any
   ) {
-    return this.dapurService.reportArusKas(req.user.id, id, data);
+    return this.dapurService.reportArusKas(req.user.id, req.user.role, id, data);
   }
 
   @Get(':id/arus-kas')
   async getArusKas(@Request() req, @Param('id') id: string, @Query('bookType') bookType?: any) {
-    return this.dapurService.getArusKas(id, bookType);
+    return this.dapurService.getArusKas(id, req.user.id, req.user.role, bookType);
   }
 
   @Roles('ADMIN_DAPUR', 'PRODUKSI')
@@ -221,7 +221,7 @@ export class DapurController {
   // SUPPLIER CASHBACK — Pencatatan Cashback
   // ============================================================
 
-  @Roles('ADMIN_PUSAT', 'PROJECT_OWNER', 'SUPER_ADMIN')
+  @Roles('ADMIN_PUSAT', 'SUPER_ADMIN', 'ADMIN')
   @Post(':id/cashback')
   async reportCashback(
     @Request() req,
@@ -231,7 +231,7 @@ export class DapurController {
     return this.dapurService.reportCashback(req.user.id, req.user.role, id, data);
   }
 
-  @Roles('ADMIN_PUSAT', 'PROJECT_OWNER', 'SUPER_ADMIN')
+  @Roles('ADMIN_PUSAT', 'SUPER_ADMIN', 'ADMIN')
   @Get(':id/cashbacks')
   async getCashbacks(@Request() req, @Param('id') id: string) {
     return this.dapurService.getCashbackHistory(req.user.role, id);

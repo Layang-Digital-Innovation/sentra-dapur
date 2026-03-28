@@ -12,17 +12,13 @@ import {
 } from 'class-validator';
 
 export class BulkSubscribeDapurDto {
-  @IsUUID()
-  labelId: string;
-
   @IsArray()
-  @ArrayMinSize(1, { message: 'At least one dapurUnitId is required' })
   @IsUUID('4', { each: true })
   dapurUnitIds: string[];
 
   @Type(() => Number)
   @IsNumber()
-  @Min(0.01, { message: 'price must be greater than 0' })
+  @Min(0)
   price: number;
 
   @IsOptional()
@@ -30,23 +26,18 @@ export class BulkSubscribeDapurDto {
   currency?: string;
 
   @IsOptional()
-  @Type(() => Boolean)
-  @IsBoolean()
-  autoActivate?: boolean;
-
-  @IsOptional()
-  @IsIn(['MONTHLY', 'YEARLY'])
-  period?: 'MONTHLY' | 'YEARLY';
+  @IsIn(['MONTHLY', 'YEARLY', 'TWO_YEARS'])
+  period?: 'MONTHLY' | 'YEARLY' | 'TWO_YEARS';
 }
 
 export class OrgInvoiceForLabelDto {
   @IsUUID()
   labelId: string;
 
+  @IsOptional()
   @IsArray()
-  @ArrayMinSize(1, { message: 'At least one dapurUnitId is required' })
   @IsUUID('4', { each: true })
-  dapurUnitIds: string[];
+  dapurUnitIds?: string[];
 
   @IsOptional()
   @Type(() => Number)
@@ -64,8 +55,8 @@ export class OrgInvoiceForLabelDto {
   @IsString()
   currency?: string;
 
-  @IsIn(['MONTHLY', 'YEARLY'])
-  period: 'MONTHLY' | 'YEARLY';
+  @IsIn(['MONTHLY', 'YEARLY', 'TWO_YEARS'])
+  period: 'MONTHLY' | 'YEARLY' | 'TWO_YEARS';
 
   @IsOptional()
   @IsIn(['xendit', 'manual'])
