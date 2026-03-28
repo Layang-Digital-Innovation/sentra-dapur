@@ -6,7 +6,9 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends openssl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
-RUN npm ci
+# Menggunakan npm ci dengan flag legacy-peer-deps dan fallback ke npm install
+# persis seperti di frontend agar proses build Docker lebih kebal terhadap error
+RUN npm ci --legacy-peer-deps || npm install --legacy-peer-deps
 
 COPY tsconfig*.json ./
 COPY tsconfig.build.json ./

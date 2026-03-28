@@ -2,7 +2,9 @@
 FROM node:20-bookworm-slim AS deps
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+# Menggunakan npm ci dengan flag legacy-peer-deps agar tidak mudah gagal karena conflict versi.
+# Jika npm ci tetap gagal (misal lockfile tidak sinkron), akan otomatis fallback ke npm install.
+RUN npm ci --legacy-peer-deps || npm install --legacy-peer-deps
 
 FROM node:20-bookworm-slim AS builder
 WORKDIR /app
