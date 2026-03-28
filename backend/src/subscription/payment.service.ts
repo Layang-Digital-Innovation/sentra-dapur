@@ -22,6 +22,30 @@ export class PaymentService {
     });
   }
 
+  /** Resolve subscription row for a user (User.subscriptionId or dapur membership). */
+  private async subscriptionRowForUser(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { subscription: true },
+    });
+    if (user?.subscription) {
+      return user.subscription;
+    }
+    return this.prisma.subscription.findFirst({
+      where: {
+        dapurUnit: {
+          OR: [
+            { projectOwnerId: userId },
+            { adminDapurId: userId },
+            { adminPusatId: userId },
+            { investors: { some: { investorId: userId } } },
+          ],
+        },
+      },
+      orderBy: { startedAt: 'desc' },
+    });
+  }
+
   async createPayment(data: {
     userId: string;
     amount: number;
@@ -495,12 +519,16 @@ export class PaymentService {
       where: { id: subscriptionId },
       include: {
         payments: {
-          orderBy: { createdAt: 'desc' }
+          orderBy: { createdAt: 'desc' },
         },
-        user: {
-          select: { id: true, email: true }
-        }
-      }
+        dapurUnit: {
+          select: {
+            id: true,
+            name: true,
+            projectOwner: { select: { id: true, email: true } },
+          },
+        },
+      },
     });
   }
 
@@ -508,37 +536,34 @@ export class PaymentService {
    * Check if user has active subscription
    */
   async hasActiveSubscription(userId: string): Promise<boolean> {
-    const subscription = await this.prisma.subscription.findFirst({
-      where: {
-        userId: userId,
-        status: SubscriptionStatus.ACTIVE,
-        expiresAt: {
-          gt: new Date() // Not expired
-        }
-      }
-    });
-
-    return !!subscription;
+    const subscription = await this.subscriptionRowForUser(userId);
+    if (!subscription || subscription.status !== SubscriptionStatus.ACTIVE) {
+      return false;
+    }
+    const end = subscription.currentPeriodEnd ?? subscription.expiresAt;
+    return !!end && end > new Date();
   }
 
   /**
    * Get user's active subscription
    */
   async getUserActiveSubscription(userId: string) {
-    return this.prisma.subscription.findFirst({
-      where: {
-        userId: userId,
-        status: SubscriptionStatus.ACTIVE,
-        expiresAt: {
-          gt: new Date() // Not expired
-        }
-      },
+    const subscription = await this.subscriptionRowForUser(userId);
+    if (!subscription || subscription.status !== SubscriptionStatus.ACTIVE) {
+      return null;
+    }
+    const end = subscription.currentPeriodEnd ?? subscription.expiresAt;
+    if (!end || end <= new Date()) {
+      return null;
+    }
+    return this.prisma.subscription.findUnique({
+      where: { id: subscription.id },
       include: {
         payments: {
           orderBy: { createdAt: 'desc' },
-          take: 5 // Last 5 payments
-        }
-      }
+          take: 5,
+        },
+      },
     });
   }
 

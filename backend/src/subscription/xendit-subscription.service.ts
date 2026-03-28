@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
-import { SubscriptionPlan, SubscriptionStatus, PaymentProvider, PaymentStatus, PaymentType, SubscriptionAction, Currency } from '@prisma/client';
+import { SubscriptionPlan, SubscriptionStatus, PaymentProvider, PaymentStatus, PaymentType, SubscriptionAction, Currency, Role } from '@prisma/client';
 
 import { Xendit } from 'xendit-node';
 import { PaymentRequestCurrency } from 'xendit-node/payment_request/models/PaymentRequestCurrency';
@@ -20,6 +20,55 @@ export class XenditSubscriptionService {
     });
   }
 
+  private async resolvePrimaryDapurUnitIdForUser(userId: string, role: Role): Promise<string | null> {
+    if (role === Role.PROJECT_OWNER) {
+      const d = await this.prisma.dapurUnit.findFirst({
+        where: { projectOwnerId: userId },
+        select: { id: true },
+      });
+      return d?.id ?? null;
+    }
+    if (role === Role.ADMIN_DAPUR) {
+      const d = await this.prisma.dapurUnit.findFirst({
+        where: { adminDapurId: userId },
+        select: { id: true },
+      });
+      return d?.id ?? null;
+    }
+    if (role === Role.ADMIN_PUSAT) {
+      const d = await this.prisma.dapurUnit.findFirst({
+        where: { adminPusatId: userId },
+        select: { id: true },
+      });
+      return d?.id ?? null;
+    }
+    if (role === Role.INVESTOR) {
+      const stake = await this.prisma.dapurInvestor.findFirst({
+        where: { investorId: userId },
+        select: { dapurUnitId: true },
+      });
+      return stake?.dapurUnitId ?? null;
+    }
+    return null;
+  }
+
+  private async propagateSubscriptionToDapurUsers(dapurUnitId: string, subscriptionId: string) {
+    const dapur = await this.prisma.dapurUnit.findUnique({
+      where: { id: dapurUnitId },
+      include: { investors: true },
+    });
+    if (!dapur) return;
+    const ids = new Set<string>();
+    ids.add(dapur.projectOwnerId);
+    if (dapur.adminDapurId) ids.add(dapur.adminDapurId);
+    if (dapur.adminPusatId) ids.add(dapur.adminPusatId);
+    for (const i of dapur.investors) ids.add(i.investorId);
+    await this.prisma.user.updateMany({
+      where: { id: { in: [...ids] } },
+      data: { subscriptionId },
+    });
+  }
+
   async createSubscriptionPlan(data: {
     userId: string;
     plan: SubscriptionPlan;
@@ -28,6 +77,18 @@ export class XenditSubscriptionService {
   }) {
     try {
       // ...
+
+      const dbUser = await this.prisma.user.findUnique({
+        where: { id: data.userId },
+        select: { role: true },
+      });
+      if (!dbUser) {
+        throw new Error(`User not found: ${data.userId}`);
+      }
+      const dapurUnitId = await this.resolvePrimaryDapurUnitIdForUser(data.userId, dbUser.role as Role);
+      if (!dapurUnitId) {
+        throw new Error(`No dapur unit linked to user ${data.userId}`);
+      }
 
       const paymentRequest = await this.xenditClient.PaymentRequest.createPaymentRequest({
         data: {
@@ -39,19 +100,33 @@ export class XenditSubscriptionService {
         }
       });
 
-      const subscription = await this.prisma.subscription.create({
-        data: {
-          userId: data.userId,
-          plan: data.plan,
-          status: SubscriptionStatus.TRIAL,
-          startedAt: new Date(),
-          expiresAt: null,
-          trialEndsAt: this.calculateTrialEnd(new Date()),
-          autoRenew: true,
-          currentPeriodStart: new Date(),
-          currentPeriodEnd: null
-        }
-      });
+      const existingSub = await this.prisma.subscription.findUnique({ where: { dapurUnitId } });
+      let subscription;
+      const trialEndsAt = this.calculateTrialEnd(new Date());
+      const subData = {
+        plan: data.plan,
+        status: SubscriptionStatus.TRIAL,
+        startedAt: new Date(),
+        expiresAt: null,
+        trialEndsAt,
+        autoRenew: true,
+        currentPeriodStart: new Date(),
+        currentPeriodEnd: null,
+      };
+      if (existingSub) {
+        subscription = await this.prisma.subscription.update({
+          where: { id: existingSub.id },
+          data: subData,
+        });
+      } else {
+        subscription = await this.prisma.subscription.create({
+          data: {
+            dapurUnitId,
+            ...subData,
+          },
+        });
+      }
+      await this.propagateSubscriptionToDapurUsers(dapurUnitId, subscription.id);
 
       const payment = await this.prisma.payment.create({
         data: {
@@ -520,12 +595,16 @@ export class XenditSubscriptionService {
         where: { id: subscriptionId },
         include: {
           payments: {
-            orderBy: { createdAt: 'desc' }
+            orderBy: { createdAt: 'desc' },
           },
-          user: {
-            select: { id: true, email: true }
-          }
-        }
+          dapurUnit: {
+            select: {
+              id: true,
+              name: true,
+              projectOwner: { select: { id: true, email: true } },
+            },
+          },
+        },
       });
     } catch (error) {
       this.logger.error(`Error getting subscription details: ${error.message}`, error.stack);
@@ -572,10 +651,14 @@ export class XenditSubscriptionService {
           }
         },
         include: {
-          user: {
-            select: { id: true, email: true }
-          }
-        }
+          dapurUnit: {
+            select: {
+              id: true,
+              name: true,
+              projectOwner: { select: { id: true, email: true } },
+            },
+          },
+        },
       });
     } catch (error) {
       this.logger.error(`Error getting expiring subscriptions: ${error.message}`, error.stack);
@@ -587,7 +670,7 @@ export class XenditSubscriptionService {
     try {
       const subscription = await this.prisma.subscription.findUnique({
         where: { id: subscriptionId },
-        include: { payments: true }
+        include: { payments: true, dapurUnit: { select: { projectOwnerId: true } } },
       });
 
       if (!subscription) {
@@ -609,8 +692,12 @@ export class XenditSubscriptionService {
         throw new Error(`Original payment record not found for subscription: ${subscriptionId}`);
       }
 
+      const billUserId = subscription.dapurUnit?.projectOwnerId;
+      if (!billUserId) {
+        throw new Error(`Dapur unit has no project owner for subscription: ${subscriptionId}`);
+      }
       const newPlan = await this.createSubscriptionPlan({
-        userId: subscription.userId,
+        userId: billUserId,
         plan: subscription.plan,
         price: originalPayment.amount,
         currency: ((originalPayment.metadata as any).currency as PaymentRequestCurrency) || PaymentRequestCurrency.Idr

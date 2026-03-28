@@ -20,6 +20,14 @@ export const tradingService = {
     const { data } = await axiosInstance.put(`/trading/products/${id}`, payload);
     return data as any;
   },
+  async adminUpdateProduct(id: string, payload: Partial<{ name: string; description: string; prices: Array<{ currency: 'IDR' | 'USD'; price: number }>; unit: string; weight: number; volume: string; }>) {
+    const { data } = await axiosInstance.put(`/trading/admin/products/${id}`, payload);
+    return data as any;
+  },
+  async adminDeleteProduct(id: string) {
+    const { data } = await axiosInstance.delete(`/trading/admin/products/${id}`);
+    return data as any;
+  },
   async getSellerProducts() {
     const { data } = await axiosInstance.get('/trading/seller/products');
     return data as any[];

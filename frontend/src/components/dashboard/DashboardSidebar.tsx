@@ -272,6 +272,7 @@ const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
           icon: <FiShoppingBag className="mr-3 h-5 w-5" />,
           subLinks: [
             { name: 'PO Automation', href: '/dashboard/admin-dapur/kalkulasi', icon: <FiArrowRight className="mr-2 h-4 w-4" /> },
+            { name: 'Estimasi HPP', href: '/dashboard/admin-dapur/hpp', icon: <FiArrowRight className="mr-2 h-4 w-4" /> },
             { name: 'List PO', href: '/dashboard/admin-dapur/po', icon: <FiArrowRight className="mr-2 h-4 w-4" /> },
             { name: 'Invoice & Pembayaran', href: '/dashboard/admin-dapur/po/invoices', icon: <FiArrowRight className="mr-2 h-4 w-4" /> },
           ]
@@ -287,6 +288,7 @@ const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
         { name: 'Master Menu', href: '/dashboard/admin-dapur/menu', icon: <FiBook className="mr-3 h-5 w-5" /> },
         { name: 'Penjadwalan Menu', href: '/dashboard/admin-dapur/kalender', icon: <FiCalendar className="mr-3 h-5 w-5" /> },
         { name: 'Kalkulasi PO', href: '/dashboard/admin-dapur/kalkulasi', icon: <FiClipboard className="mr-3 h-5 w-5" /> },
+        { name: 'Estimasi HPP', href: '/dashboard/admin-dapur/hpp', icon: <FiDollarSign className="mr-3 h-5 w-5" /> },
         { name: 'Stok Bahan Baku', href: '/dashboard/admin-dapur/stok', icon: <FiPackage className="mr-3 h-5 w-5" /> },
         { name: 'Settings', href: '/dashboard/settings', icon: <FiSettings className="mr-3 h-5 w-5" /> },
       ];

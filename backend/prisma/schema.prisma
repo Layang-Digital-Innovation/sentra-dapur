@@ -32,7 +32,7 @@ model User {
   whatsapp     String?
   role         Role
   kycDocs      String?
-  subscription Subscription?
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id])
   projects     Project[]     @relation("OwnerProjects")
   investments  Investment[]  @relation("InvestorInvestments")
   products     Product[]     @relation("SellerProducts")
@@ -58,11 +58,8 @@ model User {
 
   // IMPROVED: Single relation for messages sent
   sentMessages Message[]
-  
-  loadingGoodsProduced LoadingGood[] @relation("ReceivedBy")
 
-  // NEW: Back relation for Enterprise Label investors
-  labelInvestors LabelInvestor[]
+  loadingGoodsProduced LoadingGood[] @relation("ReceivedBy")
 
   // Notification relations
   notifications Notification[]
@@ -72,17 +69,18 @@ model User {
   SellerProfile SellerProfile?
 
   // Micro Investment Private Sub-Ledger
-  microInvestors      MicroInvestor[] @relation("MicroParent")
-  microInvestorUser   MicroInvestor? @relation("MicroUser")
-  wallets             InvestorWallet?
-  microDividends      MicroDividend[] @relation("InvestorMicroDividends")
+  microInvestors    MicroInvestor[] @relation("MicroParent")
+  microInvestorUser MicroInvestor?  @relation("MicroUser")
+  wallets           InvestorWallet?
+  microDividends    MicroDividend[] @relation("InvestorMicroDividends")
 
   // Dapur Dividend relations
-  reportedDapurDividends DapurDividend[] @relation("DapurDividendReporter")
+  reportedDapurDividends DapurDividend[]             @relation("DapurDividendReporter")
   dapurDividendReceipts  DapurDividendDistribution[] @relation("DapurDividendRecipient")
 
   // Cashback reporter
-  reportedCashbacks      DapurCashback[] @relation("CashbackReporter")
+  reportedCashbacks DapurCashback[] @relation("CashbackReporter")
+  subscriptionId    String?
 }
 
 model Project {
@@ -219,7 +217,7 @@ model Product {
   unit        String
   weight      Float
   volume      String
-  seller        User           @relation("SellerProducts", fields: [sellerId], references: [id])
+  seller      User           @relation("SellerProducts", fields: [sellerId], references: [id])
   sellerId    String
   orders      Order[]
   createdAt   DateTime       @default(now())
@@ -230,9 +228,9 @@ model Product {
   priceType   PriceType      @default(EXW)
   // Images
   images      ProductImage[]
-  
+
   // PO relation
-  poItems     POItem[]
+  poItems POItem[]
 }
 
 // NEW: Price per currency for products
@@ -290,8 +288,8 @@ model Shipment {
 // IMPROVED: Enhanced Subscription model with better tracking
 model Subscription {
   id                 String             @id @default(uuid())
-  user               User               @relation(fields: [userId], references: [id])
-  userId             String             @unique
+  dapurUnit          DapurUnit          @relation(fields: [dapurUnitId], references: [id], onDelete: Cascade)
+  dapurUnitId        String             @unique
   status             SubscriptionStatus @default(TRIAL)
   plan               SubscriptionPlan   @default(TRIAL)
   startedAt          DateTime           @default(now())
@@ -312,6 +310,7 @@ model Subscription {
   customCurrency     Currency           @default(IDR)
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
+  User               User[]
 }
 
 // IMPROVED: Enhanced Payment model with better subscription integration
@@ -495,36 +494,36 @@ enum SubscriptionStatus {
 
 // NEW: Enterprise Label for custom subscriptions
 model EnterpriseLabel {
-  id             String          @id @default(uuid())
-  name           String
-  code           String          @unique
-  contactEmail   String?
-  defaultPrice   Float?
-  currency       Currency?       @default(IDR)
-  description    String?
-  metadata       Json?
-  subscriptions  Subscription[]
-  // NEW: Investor associations
-  labelInvestors LabelInvestor[]
+  id            String         @id @default(uuid())
+  name          String
+  code          String         @unique
+  contactEmail  String?
+  defaultPrice  Float?
+  currency      Currency?      @default(IDR)
+  description   String?
+  metadata      Json?
+  subscriptions Subscription[]
+  // NEW: Dapur associations
+  labelDapurs   LabelDapur[]
   // Back-relation to payments (organization-level billing)
-  payments       Payment[]
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  payments      Payment[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 }
 
-// NEW: Junction table between EnterpriseLabel and User (investor)
-model LabelInvestor {
-  id        String          @id @default(uuid())
-  label     EnterpriseLabel @relation(fields: [labelId], references: [id], onDelete: Cascade)
-  labelId   String
-  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    String
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
+// NEW: Junction table between EnterpriseLabel and DapurUnit
+model LabelDapur {
+  id          String          @id @default(uuid())
+  label       EnterpriseLabel @relation(fields: [labelId], references: [id], onDelete: Cascade)
+  labelId     String
+  dapurUnit   DapurUnit       @relation(fields: [dapurUnitId], references: [id], onDelete: Cascade)
+  dapurUnitId String
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 
-  @@unique([labelId, userId])
+  @@unique([labelId, dapurUnitId])
   @@index([labelId])
-  @@index([userId])
+  @@index([dapurUnitId])
 }
 
 enum SubscriptionPlan {
@@ -784,23 +783,23 @@ model SellerProfile {
 // ============================================
 
 model DapurUnit {
-  id             String      @id @default(uuid())
-  name           String
-  location       String?
-  status         ProjectStatus @default(PENDING) // pending approval from PO
-  
+  id       String        @id @default(uuid())
+  name     String
+  location String?
+  status   ProjectStatus @default(PENDING) // pending approval from PO
+
   // Relations
-  projectOwner   User        @relation("ProjectOwnerDapur", fields: [projectOwnerId], references: [id])
+  projectOwner   User   @relation("ProjectOwnerDapur", fields: [projectOwnerId], references: [id])
   projectOwnerId String
-  
-  adminPusat     User?       @relation("AdminPusatDapur", fields: [adminPusatId], references: [id])
-  adminPusatId   String?
-  
-  adminDapur     User?       @relation("AdminDapurUnit", fields: [adminDapurId], references: [id])
-  adminDapurId   String?
-  
-  investors      DapurInvestor[] 
-  
+
+  adminPusat   User?   @relation("AdminPusatDapur", fields: [adminPusatId], references: [id])
+  adminPusatId String?
+
+  adminDapur   User?   @relation("AdminDapurUnit", fields: [adminDapurId], references: [id])
+  adminDapurId String?
+
+  investors DapurInvestor[]
+
   // Operations
   arusKas        ArusKas[]
   stok           Stok[]
@@ -808,7 +807,11 @@ model DapurUnit {
 
   // Produksi relations
   monthlyMenuPlans MonthlyMenuPlan[]
-  menus          Menu[]          @relation("DapurMenu")
+  menus            Menu[]            @relation("DapurMenu")
+
+  // Subscriptions
+  subscriptions Subscription[]
+  labelDapurs   LabelDapur[]
 
   // PO Branding & Signature
   logoUrl        String?
@@ -823,27 +826,27 @@ model DapurUnit {
   dapurDividends DapurDividend[]
 
   // Cashback (income from suppliers)
-  cashbacks      DapurCashback[]
+  cashbacks DapurCashback[]
 
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model DapurInvestor {
-  id               String    @id @default(uuid())
-  dapurUnit        DapurUnit @relation(fields: [dapurUnitId], references: [id])
-  dapurUnitId      String
-  
-  investor         User      @relation(fields: [investorId], references: [id])
-  investorId       String
-  
-  investmentAmount    Float
-  profitSharingPct    Float     // legacy / general
-  profitSharingPctPreBEP  Float @default(0)  // sebelum BEP
-  profitSharingPctPostBEP Float @default(0)  // setelah BEP
+  id          String    @id @default(uuid())
+  dapurUnit   DapurUnit @relation(fields: [dapurUnitId], references: [id])
+  dapurUnitId String
 
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  investor   User   @relation(fields: [investorId], references: [id])
+  investorId String
+
+  investmentAmount        Float
+  profitSharingPct        Float // legacy / general
+  profitSharingPctPreBEP  Float @default(0) // sebelum BEP
+  profitSharingPctPostBEP Float @default(0) // setelah BEP
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([dapurUnitId, investorId])
 }
@@ -852,22 +855,22 @@ model DapurInvestor {
 // Laporan Bagi Hasil / Dividen per Dapur oleh Admin Pusat
 // ============================================================
 model DapurDividend {
-  id           String    @id @default(uuid())
-  dapurUnit    DapurUnit @relation(fields: [dapurUnitId], references: [id])
-  dapurUnitId  String
+  id          String    @id @default(uuid())
+  dapurUnit   DapurUnit @relation(fields: [dapurUnitId], references: [id])
+  dapurUnitId String
 
-  totalAmount  Float     // Total laba/profit yang akan dibagi untuk dapur ini
-  period       String?   // misal: "Maret 2026" atau "Q1 2026"
-  description  String?   // Keterangan tambahan
+  totalAmount Float // Total laba/profit yang akan dibagi untuk dapur ini
+  period      String? // misal: "Maret 2026" atau "Q1 2026"
+  description String? // Keterangan tambahan
 
-  reportedBy   User      @relation("DapurDividendReporter", fields: [reportedById], references: [id])
+  reportedBy   User   @relation("DapurDividendReporter", fields: [reportedById], references: [id])
   reportedById String
 
   // Distribusi per investor
   distributions DapurDividendDistribution[]
 
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([dapurUnitId])
   @@index([reportedById])
@@ -875,17 +878,17 @@ model DapurDividend {
 
 // Distribusi bagi hasil ke masing-masing investor
 model DapurDividendDistribution {
-  id          String        @id @default(uuid())
-  dividend    DapurDividend @relation(fields: [dividendId], references: [id], onDelete: Cascade)
-  dividendId  String
+  id         String        @id @default(uuid())
+  dividend   DapurDividend @relation(fields: [dividendId], references: [id], onDelete: Cascade)
+  dividendId String
 
-  investor    User          @relation("DapurDividendRecipient", fields: [investorId], references: [id])
-  investorId  String
+  investor   User   @relation("DapurDividendRecipient", fields: [investorId], references: [id])
+  investorId String
 
-  amount      Float         // Jumlah yang diterima investor ini
-  percentage  Float         // Persentase bagi hasil yang digunakan
+  amount     Float // Jumlah yang diterima investor ini
+  percentage Float // Persentase bagi hasil yang digunakan
 
-  createdAt   DateTime      @default(now())
+  createdAt DateTime @default(now())
 
   @@unique([dividendId, investorId])
   @@index([investorId])
@@ -893,46 +896,46 @@ model DapurDividendDistribution {
 }
 
 model ArusKas {
-  id             String    @id @default(uuid())
-  dapurUnit      DapurUnit @relation(fields: [dapurUnitId], references: [id])
-  dapurUnitId    String
-  
-  type           ArusKasType
-  bookType       CashBookType @default(UMUM)
-  amount         Float
-  description    String
-  referenceNo    String?
-  evidenceUrl    String?
-  transactionDate DateTime    @default(now())
-  category       String      @default("EXTERNAL") // EXTERNAL, INTERNAL_TRANSFER
-  status         ArusKasStatus @default(PENDING)
-  
+  id          String    @id @default(uuid())
+  dapurUnit   DapurUnit @relation(fields: [dapurUnitId], references: [id])
+  dapurUnitId String
+
+  type            ArusKasType
+  bookType        CashBookType  @default(UMUM)
+  amount          Float
+  description     String
+  referenceNo     String?
+  evidenceUrl     String?
+  transactionDate DateTime      @default(now())
+  category        String        @default("EXTERNAL") // EXTERNAL, INTERNAL_TRANSFER
+  status          ArusKasStatus @default(PENDING)
+
   // Relations to items (manual breakdown)
-  items          ArusKasItem[]
+  items ArusKasItem[]
 
   // Relation to Purchase Order (if it's a payment)
-  purchaseOrder  PurchaseOrder? @relation("ArusKasPO")
-  
-  reportedBy     User      @relation("ReportedBy", fields: [reportedById], references: [id])
-  reportedById   String
-  approvedBy     User?     @relation("ApprovedBy", fields: [approvedById], references: [id])
-  approvedById   String?
+  purchaseOrder PurchaseOrder? @relation("ArusKasPO")
 
-  createdAt      DateTime  @default(now())
+  reportedBy   User    @relation("ReportedBy", fields: [reportedById], references: [id])
+  reportedById String
+  approvedBy   User?   @relation("ApprovedBy", fields: [approvedById], references: [id])
+  approvedById String?
+
+  createdAt DateTime @default(now())
 }
 
 model ArusKasItem {
-  id             String    @id @default(uuid())
-  arusKas        ArusKas   @relation(fields: [arusKasId], references: [id], onDelete: Cascade)
-  arusKasId      String
-  
-  name           String
-  quantity       Float
-  unit           String?
-  pricePerUnit   Float?
-  total          Float     @default(0)
+  id        String  @id @default(uuid())
+  arusKas   ArusKas @relation(fields: [arusKasId], references: [id], onDelete: Cascade)
+  arusKasId String
 
-  createdAt      DateTime  @default(now())
+  name         String
+  quantity     Float
+  unit         String?
+  pricePerUnit Float?
+  total        Float   @default(0)
+
+  createdAt DateTime @default(now())
 }
 
 enum ArusKasType {
@@ -941,91 +944,91 @@ enum ArusKasType {
 }
 
 model Stok {
-  id             String    @id @default(uuid())
-  dapurUnit      DapurUnit @relation(fields: [dapurUnitId], references: [id])
-  dapurUnitId    String
-  
-  itemName       String
-  quantity       Float
-  unit           String
-  
-  category       StokCategory @default(BAHAN)
-  
-  lastUpdatedBy  User      @relation(fields: [lastUpdatedById], references: [id])
+  id          String    @id @default(uuid())
+  dapurUnit   DapurUnit @relation(fields: [dapurUnitId], references: [id])
+  dapurUnitId String
+
+  itemName String
+  quantity Float
+  unit     String
+
+  category StokCategory @default(BAHAN)
+
+  lastUpdatedBy   User   @relation(fields: [lastUpdatedById], references: [id])
   lastUpdatedById String
-  
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model PurchaseOrder {
-  id             String    @id @default(uuid())
-  dapurUnit      DapurUnit @relation(fields: [dapurUnitId], references: [id])
-  dapurUnitId    String
-  
-  items          POItem[]
-  status         POStatus  @default(PENDING)
-  type           POType    @default(BAHAN)
-  paymentStatus  POPaymentStatus @default(UNPAID)
-  paymentDate    DateTime?
-  arusKas        ArusKas?  @relation("ArusKasPO", fields: [arusKasId], references: [id])
-  arusKasId      String?   @unique
-  
-  createdBy      User      @relation("POCreated", fields: [createdById], references: [id])
-  createdById    String
-  
-  approvedBy     User?     @relation("POApproved", fields: [approvedById], references: [id])
-  approvedById   String?
+  id          String    @id @default(uuid())
+  dapurUnit   DapurUnit @relation(fields: [dapurUnitId], references: [id])
+  dapurUnitId String
 
-  loadingGoods   LoadingGood[]
+  items         POItem[]
+  status        POStatus        @default(PENDING)
+  type          POType          @default(BAHAN)
+  paymentStatus POPaymentStatus @default(UNPAID)
+  paymentDate   DateTime?
+  arusKas       ArusKas?        @relation("ArusKasPO", fields: [arusKasId], references: [id])
+  arusKasId     String?         @unique
 
-  totalAmount    Float     @default(0)
+  createdBy   User   @relation("POCreated", fields: [createdById], references: [id])
+  createdById String
+
+  approvedBy   User?   @relation("POApproved", fields: [approvedById], references: [id])
+  approvedById String?
+
+  loadingGoods LoadingGood[]
+
+  totalAmount Float @default(0)
 
   // Cashback related to this PO
-  cashbacks      DapurCashback[]
+  cashbacks DapurCashback[]
 
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model POItem {
   id              String        @id @default(uuid())
   purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
   purchaseOrderId String
-  
-  product         Product?      @relation(fields: [productId], references: [id])
-  productId       String?
-  productName     String?
-  supplierName    String?
-  unit            String?
-  
-  quantity        Int
-  pricePerUnit    Float
-  isOrdered       Boolean       @default(false)
 
-  receivedItems   LoadingGoodItem[]
+  product      Product? @relation(fields: [productId], references: [id])
+  productId    String?
+  productName  String?
+  supplierName String?
+  unit         String?
+
+  quantity     Int
+  pricePerUnit Float
+  isOrdered    Boolean @default(false)
+
+  receivedItems LoadingGoodItem[]
 }
 
 // ============================================
 
 model DapurCashback {
-  id              String        @id @default(uuid())
-  dapurUnit       DapurUnit     @relation(fields: [dapurUnitId], references: [id])
-  dapurUnitId     String
-  
+  id          String    @id @default(uuid())
+  dapurUnit   DapurUnit @relation(fields: [dapurUnitId], references: [id])
+  dapurUnitId String
+
   amount          Float
   supplierName    String?
   purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
   purchaseOrderId String?
-  
+
   description     String?
-  transactionDate DateTime      @default(now())
-  
-  reportedBy      User          @relation("CashbackReporter", fields: [reportedById], references: [id])
-  reportedById    String
-  
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  transactionDate DateTime @default(now())
+
+  reportedBy   User   @relation("CashbackReporter", fields: [reportedById], references: [id])
+  reportedById String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([dapurUnitId])
   @@index([reportedById])
@@ -1038,34 +1041,34 @@ model LoadingGood {
   id              String        @id @default(uuid())
   purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
   purchaseOrderId String
-  
-  receivedBy      User          @relation("ReceivedBy", fields: [receivedById], references: [id])
-  receivedById    String
-  
-  notes           String?
-  items           LoadingGoodItem[]
-  
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+
+  receivedBy   User   @relation("ReceivedBy", fields: [receivedById], references: [id])
+  receivedById String
+
+  notes String?
+  items LoadingGoodItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model LoadingGoodItem {
-  id              String        @id @default(uuid())
-  loadingGood     LoadingGood   @relation(fields: [loadingGoodId], references: [id])
-  loadingGoodId   String
-  
-  poItem          POItem        @relation(fields: [poItemId], references: [id])
-  poItemId        String
-  
-  quantityReceived Float        // Total yang diterima di gudang
-  quantityRejected Float        // Total yang ditolak karena kualitas
-  quantityReturned Float        // Total yang dikembalikan
-  
-  notes           String?       // Alasan reject/return
-  qualityCheck    String?       // Catatan kualitas
-  
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  id            String      @id @default(uuid())
+  loadingGood   LoadingGood @relation(fields: [loadingGoodId], references: [id])
+  loadingGoodId String
+
+  poItem   POItem @relation(fields: [poItemId], references: [id])
+  poItemId String
+
+  quantityReceived Float // Total yang diterima di gudang
+  quantityRejected Float // Total yang ditolak karena kualitas
+  quantityReturned Float // Total yang dikembalikan
+
+  notes        String? // Alasan reject/return
+  qualityCheck String? // Catatan kualitas
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum POStatus {
@@ -1102,13 +1105,13 @@ enum POPaymentStatus {
 
 // Jenis porsi dinamis (Global)
 model PortionType {
-  id          String    @id @default(uuid())
-  name        String    @unique
+  id          String  @id @default(uuid())
+  name        String  @unique
   description String?
 
   // Relations to menu ingredients & daily entries
-  menuIngredients  MenuIngredient[]
-  dailyPortions    DailyMenuPortion[]
+  menuIngredients MenuIngredient[]
+  dailyPortions   DailyMenuPortion[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1116,7 +1119,7 @@ model PortionType {
 
 // Template master menu (resep menu) — Global
 model Menu {
-  id          String    @id @default(uuid())
+  id          String  @id @default(uuid())
   name        String
   description String?
   category    String?
@@ -1149,9 +1152,9 @@ model MenuIngredient {
   portionTypeId String
 
   // Nama bahan baku (bebas teks, bisa referensi stok)
-  ingredientName String  // e.g. "Beras", "Minyak Goreng"
-  unit           String  // e.g. "gram", "ml", "liter"
-  gramsPerPortion Float  // berapa gram/unit bahan per 1 porsi jenis ini
+  ingredientName  String // e.g. "Beras", "Minyak Goreng"
+  unit            String // e.g. "gram", "ml", "liter"
+  gramsPerPortion Float // berapa gram/unit bahan per 1 porsi jenis ini
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1167,15 +1170,15 @@ model MonthlyMenuPlan {
   dapurUnit   DapurUnit @relation(fields: [dapurUnitId], references: [id], onDelete: Cascade)
   dapurUnitId String
   year        Int
-  month       Int       // 1-12
+  month       Int // 1-12
   notes       String?
 
   // Daily entries for this month
   dailyEntries DailyMenuEntry[]
 
-  createdBy   String    // userId
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdBy String // userId
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([dapurUnitId, year, month])
   @@index([dapurUnitId])
@@ -1183,18 +1186,18 @@ model MonthlyMenuPlan {
 
 // Menu yang dipilih untuk satu hari (satu hari bisa banyak menu)
 model DailyMenuEntry {
-  id               String          @id @default(uuid())
-  monthlyPlan      MonthlyMenuPlan @relation(fields: [monthlyPlanId], references: [id], onDelete: Cascade)
-  monthlyPlanId    String
-  date             DateTime        // tanggal spesifik
-  
-  menu             Menu            @relation(fields: [menuId], references: [id])
-  menuId           String
+  id            String          @id @default(uuid())
+  monthlyPlan   MonthlyMenuPlan @relation(fields: [monthlyPlanId], references: [id], onDelete: Cascade)
+  monthlyPlanId String
+  date          DateTime // tanggal spesifik
 
-  notes            String?
+  menu   Menu   @relation(fields: [menuId], references: [id])
+  menuId String
+
+  notes String?
 
   // Jumlah porsi per jenis porsi untuk entry ini
-  portions         DailyMenuPortion[]
+  portions DailyMenuPortion[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1206,12 +1209,12 @@ model DailyMenuEntry {
 
 // Jumlah porsi per jenis porsi untuk satu daily menu entry
 model DailyMenuPortion {
-  id             String         @id @default(uuid())
-  dailyEntry     DailyMenuEntry @relation(fields: [dailyEntryId], references: [id], onDelete: Cascade)
-  dailyEntryId   String
-  portionType    PortionType    @relation(fields: [portionTypeId], references: [id])
-  portionTypeId  String
-  quantity       Int            // jumlah porsi yang dibuat
+  id            String         @id @default(uuid())
+  dailyEntry    DailyMenuEntry @relation(fields: [dailyEntryId], references: [id], onDelete: Cascade)
+  dailyEntryId  String
+  portionType   PortionType    @relation(fields: [portionTypeId], references: [id])
+  portionTypeId String
+  quantity      Int // jumlah porsi yang dibuat
 
   @@unique([dailyEntryId, portionTypeId])
   @@index([dailyEntryId])
@@ -1223,45 +1226,45 @@ model DailyMenuPortion {
 // ============================================
 
 model MicroInvestor {
-  id                    String    @id @default(uuid())
-  parentInvestor        User      @relation("MicroParent", fields: [parentInvestorId], references: [id])
-  parentInvestorId      String
-  
-  user                  User      @relation("MicroUser", fields: [userId], references: [id])
-  userId                String    @unique
-  
-  dapurUnit             DapurUnit @relation(fields: [dapurUnitId], references: [id])
-  dapurUnitId           String
-  
-  internalSharePct      Float     // Percentage of Parent's profit share (e.g. 10.00%)
-  isActive              Boolean   @default(true)
-  
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  id               String @id @default(uuid())
+  parentInvestor   User   @relation("MicroParent", fields: [parentInvestorId], references: [id])
+  parentInvestorId String
+
+  user   User   @relation("MicroUser", fields: [userId], references: [id])
+  userId String @unique
+
+  dapurUnit   DapurUnit @relation(fields: [dapurUnitId], references: [id])
+  dapurUnitId String
+
+  internalSharePct Float // Percentage of Parent's profit share (e.g. 10.00%)
+  isActive         Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([parentInvestorId])
   @@index([dapurUnitId])
 }
 
 model InvestorWallet {
-  id         String   @id @default(uuid())
-  user       User     @relation(fields: [userId], references: [id])
-  userId     String   @unique
-  balance    Float    @default(0)
-  
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id      String @id @default(uuid())
+  user    User   @relation(fields: [userId], references: [id])
+  userId  String @unique
+  balance Float  @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model MicroDividend {
-  id                  String   @id @default(uuid())
-  financialReportId   String?  // Reference to report manual or ID
-  user                User     @relation("InvestorMicroDividends", fields: [userId], references: [id])
-  userId              String
-  amount              Float
-  type                String   @default("MICRO") // PRIMARY/MICRO
-  
-  createdAt           DateTime @default(now())
+  id                String  @id @default(uuid())
+  financialReportId String? // Reference to report manual or ID
+  user              User    @relation("InvestorMicroDividends", fields: [userId], references: [id])
+  userId            String
+  amount            Float
+  type              String  @default("MICRO") // PRIMARY/MICRO
+
+  createdAt DateTime @default(now())
 }
 
 enum ArusKasStatus {

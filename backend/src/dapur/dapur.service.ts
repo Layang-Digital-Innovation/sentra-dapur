@@ -586,34 +586,53 @@ export class DapurService {
         });
 
         // 3. Update Stok (Dapur Inventory)
-        const netReceived = itemData.quantityReceived - itemData.quantityRejected - itemData.quantityReturned;
+        // Net delta = yang masuk gudang layak pakai: diterima − rusak (reject) − retur ke supplier.
+        // Bisa negatif pada penerimaan lanjutan (koreksi retur/reject saja) → stok berkurang.
+        const qtyReceived = Number(itemData.quantityReceived) || 0;
+        const qtyRejected = Number(itemData.quantityRejected) || 0;
+        const qtyReturned = Number(itemData.quantityReturned) || 0;
+        const netDelta = qtyReceived - qtyRejected - qtyReturned;
         const stockCategory = po.type === POType.MANUAL ? StokCategory.LAIN : StokCategory.BAHAN;
+        const itemName = poItem.productName || "";
 
-        if (netReceived > 0) {
-          const existingStok = await tx.stok.findFirst({
-            where: { dapurUnitId: po.dapurUnitId, itemName: poItem.productName || "", category: stockCategory }
-          });
+        if (Math.abs(netDelta) < 1e-9) {
+          continue;
+        }
 
-          if (existingStok) {
-            await tx.stok.update({
-              where: { id: existingStok.id },
-              data: {
-                quantity: { increment: netReceived },
-                lastUpdatedById: adminDapurId
-              }
-            });
-          } else {
-            await tx.stok.create({
-              data: {
-                dapurUnitId: po.dapurUnitId,
-                itemName: poItem.productName || "",
-                quantity: netReceived,
-                unit: poItem.unit || "Gram", // use PO item unit or Gram
-                category: stockCategory,
-                lastUpdatedById: adminDapurId
-              }
-            });
+        const existingStok = await tx.stok.findFirst({
+          where: { dapurUnitId: po.dapurUnitId, itemName, category: stockCategory },
+        });
+
+        if (existingStok) {
+          const projected = existingStok.quantity + netDelta;
+          if (projected < -1e-9) {
+            throw new BadRequestException(
+              `Stok "${itemName}" tidak cukup untuk pengurangan retur/reject. Stok saat ini: ${existingStok.quantity}, perubahan bersih: ${netDelta}`,
+            );
           }
+          await tx.stok.update({
+            where: { id: existingStok.id },
+            data: {
+              quantity: { increment: netDelta },
+              lastUpdatedById: adminDapurId,
+            },
+          });
+        } else {
+          if (netDelta < 0) {
+            throw new BadRequestException(
+              `Tidak dapat mengurangi stok untuk "${itemName}": item belum ada di gudang (lakukan penerimaan positif terlebih dahulu).`,
+            );
+          }
+          await tx.stok.create({
+            data: {
+              dapurUnitId: po.dapurUnitId,
+              itemName,
+              quantity: netDelta,
+              unit: poItem.unit || 'Gram',
+              category: stockCategory,
+              lastUpdatedById: adminDapurId,
+            },
+          });
         }
       }
 

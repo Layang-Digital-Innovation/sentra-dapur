@@ -52,7 +52,7 @@ export class DapurController {
     return this.dapurService.getArusKas(id, bookType);
   }
 
-  @Roles('ADMIN_DAPUR')
+  @Roles('ADMIN_DAPUR', 'PRODUKSI')
   @Post(':id/stok')
   async updateStok(
     @Request() req,
@@ -139,25 +139,25 @@ export class DapurController {
   }
 
   // STOK & LOADING
-  @Roles('ADMIN_DAPUR')
+  @Roles('ADMIN_DAPUR', 'PRODUKSI')
   @Get('my-stok')
   async getMyStok(@Request() req, @Query('category') category?: string) {
     return this.dapurService.getStok(req.user.id, category);
   }
 
-  @Roles('ADMIN_DAPUR')
+  @Roles('ADMIN_DAPUR', 'PRODUKSI')
   @Get('po/incoming')
   async getIncomingPOs(@Request() req) {
     return this.dapurService.getPendingReceptionPOs(req.user.id);
   }
 
-  @Roles('ADMIN_DAPUR')
+  @Roles('ADMIN_DAPUR', 'PRODUKSI')
   @Get('po/history')
   async getLoadingHistory(@Request() req) {
     return this.dapurService.getLoadingGoodsHistory(req.user.id);
   }
 
-  @Roles('ADMIN_DAPUR')
+  @Roles('ADMIN_DAPUR', 'PRODUKSI')
   @Post('po/:poId/receive')
   async receivePO(
     @Request() req,

@@ -12,19 +12,10 @@ import Link from "next/link";
 
 const menuCards = [
   {
-    title: "Jenis Porsi",
-    desc: "Kelola jenis porsi (Besar, Kecil, dll.)",
-    icon: FiSettings,
-    href: "/dashboard/produksi/porsi",
-    color: "from-amber-500 to-orange-500",
-    bg: "bg-amber-50",
-    iconColor: "text-amber-600",
-  },
-  {
     title: "Template Menu",
     desc: "Buat & atur menu beserta bahan bakunya",
     icon: FiBook,
-    href: "/dashboard/produksi/menu",
+    href: "/dashboard/admin-dapur/menu",
     color: "from-emerald-500 to-teal-500",
     bg: "bg-emerald-50",
     iconColor: "text-emerald-600",
@@ -33,7 +24,7 @@ const menuCards = [
     title: "Kalender Menu",
     desc: "Rencana menu harian selama 1 bulan",
     icon: FiCalendar,
-    href: "/dashboard/produksi/kalender",
+    href: "/dashboard/admin-dapur/kalender",
     color: "from-blue-500 to-indigo-500",
     bg: "bg-blue-50",
     iconColor: "text-blue-600",
@@ -42,7 +33,7 @@ const menuCards = [
     title: "Kalkulasi PO",
     desc: "Hitung kebutuhan bahan baku untuk PO",
     icon: FiClipboard,
-    href: "/dashboard/produksi/kalkulasi",
+    href: "/dashboard/admin-dapur/kalkulasi",
     color: "from-purple-500 to-violet-500",
     bg: "bg-purple-50",
     iconColor: "text-purple-600",
@@ -51,7 +42,7 @@ const menuCards = [
     title: "Stok Bahan Baku",
     desc: "Lihat & perbarui stok bahan baku dapur",
     icon: FiPackage,
-    href: "/dashboard/produksi/stok",
+    href: "/dashboard/admin-dapur/stok",
     color: "from-rose-500 to-pink-500",
     bg: "bg-rose-50",
     iconColor: "text-rose-600",
@@ -104,14 +95,14 @@ export default function ProduksiDashboard() {
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link
-              href="/dashboard/produksi/kalender"
+              href="/dashboard/admin-dapur/kalender"
               className="flex items-center gap-2 px-5 py-2.5 bg-white text-amber-700 font-semibold rounded-lg hover:bg-amber-50 shadow-sm transition-all"
             >
               <FiCalendar className="w-4 h-4" />
               Atur Kalender Menu
             </Link>
             <Link
-              href="/dashboard/produksi/kalkulasi"
+              href="/dashboard/admin-dapur/kalkulasi"
               className="flex items-center gap-2 px-5 py-2.5 bg-amber-800 text-white font-semibold rounded-lg hover:bg-amber-900 shadow-sm transition-all"
             >
               <FiClipboard className="w-4 h-4" />

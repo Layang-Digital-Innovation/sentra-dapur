@@ -2,7 +2,7 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { PaypalConfigService } from './paypal.config';
-import { SubscriptionPlan, SubscriptionStatus } from '@prisma/client';
+import { SubscriptionPlan, SubscriptionStatus, Role } from '@prisma/client';
 
 @Injectable()
 export class PaypalSubscriptionService {
@@ -13,6 +13,55 @@ export class PaypalSubscriptionService {
     private configService: ConfigService,
     private paypalConfigService: PaypalConfigService,
   ) {}
+
+  private async resolvePrimaryDapurUnitIdForUser(userId: string, role: Role): Promise<string | null> {
+    if (role === Role.PROJECT_OWNER) {
+      const d = await this.prisma.dapurUnit.findFirst({
+        where: { projectOwnerId: userId },
+        select: { id: true },
+      });
+      return d?.id ?? null;
+    }
+    if (role === Role.ADMIN_DAPUR) {
+      const d = await this.prisma.dapurUnit.findFirst({
+        where: { adminDapurId: userId },
+        select: { id: true },
+      });
+      return d?.id ?? null;
+    }
+    if (role === Role.ADMIN_PUSAT) {
+      const d = await this.prisma.dapurUnit.findFirst({
+        where: { adminPusatId: userId },
+        select: { id: true },
+      });
+      return d?.id ?? null;
+    }
+    if (role === Role.INVESTOR) {
+      const stake = await this.prisma.dapurInvestor.findFirst({
+        where: { investorId: userId },
+        select: { dapurUnitId: true },
+      });
+      return stake?.dapurUnitId ?? null;
+    }
+    return null;
+  }
+
+  private async propagateSubscriptionToDapurUsers(dapurUnitId: string, subscriptionId: string) {
+    const dapur = await this.prisma.dapurUnit.findUnique({
+      where: { id: dapurUnitId },
+      include: { investors: true },
+    });
+    if (!dapur) return;
+    const ids = new Set<string>();
+    ids.add(dapur.projectOwnerId);
+    if (dapur.adminDapurId) ids.add(dapur.adminDapurId);
+    if (dapur.adminPusatId) ids.add(dapur.adminPusatId);
+    for (const i of dapur.investors) ids.add(i.investorId);
+    await this.prisma.user.updateMany({
+      where: { id: { in: [...ids] } },
+      data: { subscriptionId },
+    });
+  }
 
   /**
    * Membuat billing plan di PayPal untuk subscription
@@ -172,6 +221,13 @@ export class PaypalSubscriptionService {
         throw new Error(`User dengan ID ${userId} tidak ditemukan`);
       }
 
+      const dapurUnitId = await this.resolvePrimaryDapurUnitIdForUser(userId, user.role as Role);
+      if (!dapurUnitId) {
+        throw new BadRequestException(
+          'Tidak ada unit dapur terkait akun ini; hubungkan ke dapur sebelum berlangganan PayPal.',
+        );
+      }
+
       // Tentukan tanggal mulai (1 hari dari sekarang untuk trial)
       const startDate = new Date();
       startDate.setDate(startDate.getDate() + 1);
@@ -208,9 +264,8 @@ export class PaypalSubscriptionService {
             // Simpan ID agreement di variabel untuk digunakan nanti
             const agreementId = billingAgreement.id;
             
-            // Upsert subscription to avoid unique constraint on userId
             const now = new Date();
-            const existing = await this.prisma.subscription.findUnique({ where: { userId: userId } });
+            const existing = await this.prisma.subscription.findUnique({ where: { dapurUnitId } });
             let subscription;
             if (existing) {
               subscription = await this.prisma.subscription.update({
@@ -220,19 +275,20 @@ export class PaypalSubscriptionService {
                   status: SubscriptionStatus.TRIAL,
                   startedAt: now,
                   expiresAt: null,
-                }
+                },
               });
             } else {
               subscription = await this.prisma.subscription.create({
                 data: {
-                  userId: userId,
+                  dapurUnitId,
                   plan: planId as SubscriptionPlan,
-                  status: SubscriptionStatus.TRIAL, // Gunakan TRIAL sebagai status awal
+                  status: SubscriptionStatus.TRIAL,
                   startedAt: now,
-                  expiresAt: null // Akan diupdate setelah agreement dieksekusi
-                }
+                  expiresAt: null,
+                },
               });
             }
+            await this.propagateSubscriptionToDapurUsers(dapurUnitId, subscription.id);
             
             // Ambil approval URL dan ekstrak token
             const approvalUrl = billingAgreement.links.find(link => link.rel === 'approval_url');

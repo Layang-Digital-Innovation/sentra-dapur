@@ -17,6 +17,7 @@ const protectedPaths = [
   '/dashboard/investment-chat',
   '/dashboard/admin-pusat',
   '/dashboard/admin-dapur',
+  '/dashboard/produksi',
   '/dashboard/super-admin',
 ];
 
@@ -29,6 +30,7 @@ const roleSpecificPaths = {
   'PROJECT_OWNER': ['/dashboard/project-owner', '/dashboard/investment-chat'],
   'ADMIN_PUSAT': ['/dashboard/admin-pusat', '/dashboard/chat'],
   'ADMIN_DAPUR': ['/dashboard/admin-dapur', '/dashboard/chat'],
+  'PRODUKSI': ['/dashboard/produksi', '/dashboard/admin-dapur', '/dashboard/chat'],
   'SUPER_ADMIN': ['/dashboard/super-admin', '/dashboard/chat'],
   'BUYER': ['/dashboard/buyer', '/dashboard/chat'],
   'SUPPLIER': ['/dashboard/supplier', '/dashboard/chat'],
@@ -56,6 +58,8 @@ export function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL('/dashboard/admin-pusat', request.url));
     } else if (userRole === 'ADMIN_DAPUR') {
       return NextResponse.redirect(new URL('/dashboard/admin-dapur', request.url));
+    } else if (userRole === 'PRODUKSI') {
+      return NextResponse.redirect(new URL('/dashboard/produksi', request.url));
     } else if (userRole === 'SUPER_ADMIN') {
       return NextResponse.redirect(new URL('/dashboard/super-admin', request.url));
     } else if (userRole === 'BUYER') {
@@ -101,6 +105,8 @@ export function middleware(request: NextRequest) {
           return NextResponse.redirect(new URL('/dashboard/admin-pusat', request.url));
         } else if (protectedUserRole === 'ADMIN_DAPUR') {
           return NextResponse.redirect(new URL('/dashboard/admin-dapur', request.url));
+        } else if (protectedUserRole === 'PRODUKSI') {
+          return NextResponse.redirect(new URL('/dashboard/produksi', request.url));
         } else if (protectedUserRole === 'SUPER_ADMIN') {
           return NextResponse.redirect(new URL('/dashboard/super-admin', request.url));
         } else if (protectedUserRole === 'BUYER') {
@@ -132,6 +138,8 @@ export function middleware(request: NextRequest) {
           return NextResponse.redirect(new URL('/dashboard/admin-pusat', request.url));
         } else if (protectedUserRole === 'ADMIN_DAPUR') {
           return NextResponse.redirect(new URL('/dashboard/admin-dapur', request.url));
+        } else if (protectedUserRole === 'PRODUKSI') {
+          return NextResponse.redirect(new URL('/dashboard/produksi', request.url));
         } else if (protectedUserRole === 'SUPER_ADMIN') {
           return NextResponse.redirect(new URL('/dashboard/super-admin', request.url));
         } else if (protectedUserRole === 'BUYER') {

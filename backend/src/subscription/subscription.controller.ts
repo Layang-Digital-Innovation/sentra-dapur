@@ -10,7 +10,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { SubscriptionPlan, PaymentStatus, Role } from '@prisma/client';
- 
+import { BulkSubscribeDapurDto, OrgInvoiceForLabelDto } from './dto/bulk-subscribe-dapur.dto';
 
 @Controller('subscription')
 export class SubscriptionController {
@@ -52,6 +52,7 @@ export class SubscriptionController {
       req.user.id,
       data.planId,
       data.paymentMethod,
+      req.user.role,
     );
   }
 
@@ -170,12 +171,8 @@ export class SubscriptionController {
 
     // If payment is for a subscription, activate the subscription
     if (payment.status === PaymentStatus.PAID) {
-      const subscription = await this.subscriptionService['prisma'].subscription.findFirst({
-        where: { userId: payment.userId },
-      });
-
-      if (subscription) {
-        await this.subscriptionService.activateSubscription(subscription.id);
+      if (payment.subscriptionId) {
+        await this.subscriptionService.activateSubscription(payment.subscriptionId);
       }
     }
 
@@ -294,40 +291,27 @@ export class SubscriptionController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.SUPER_ADMIN)
   @Post('enterprise/label/investors/bulk-subscribe')
-  async bulkSubscribeInvestors(@Body() body: { labelId: string; userIds: string[]; price: number; currency?: string; autoActivate?: boolean; period?: 'MONTHLY' | 'YEARLY'; }) {
-    return this.subscriptionService.bulkSubscribeInvestorsForLabel(body);
+  async bulkSubscribeDapurs(@Body() body: BulkSubscribeDapurDto) {
+    return this.subscriptionService.bulkSubscribeDapursForLabel(body);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
+  @Get('enterprise/labels/:labelId/dapur-units')
+  async listDapurUnitsForLabel(@Param('labelId') labelId: string) {
+    return this.subscriptionService.getDapurUnitsForEnterpriseLabel(labelId);
   }
 
   // Organization-level invoice for Enterprise Custom (single invoice for many users)
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.SUPER_ADMIN)
   @Post('enterprise/label/org-invoice')
-  async createOrgInvoice(
-    @Request() req,
-    @Body() body: { 
-      labelId: string; 
-      userIds: string[]; 
-      pricePerUser?: number; 
-      totalAmount?: number;
-      currency?: string; 
-      period: 'MONTHLY' | 'YEARLY'; 
-      provider?: 'xendit' | 'manual'; 
-      description?: string;
-      // manual invoice fields
-      invoiceNumber?: string;
-      referenceNumber?: string;
-      bankName?: string;
-      paidBy?: string;
-      notes?: string;
-      awaitingApproval?: boolean;
-      additionalSeats?: boolean;
-    }
-  ) {
+  async createOrgInvoice(@Request() req, @Body() body: OrgInvoiceForLabelDto) {
     return this.subscriptionService.createOrgInvoiceForLabel({
       adminUserId: req.user.id,
       labelId: body.labelId,
-      userIds: body.userIds,
-      pricePerUser: (body.pricePerUser ?? 0),
+      dapurUnitIds: body.dapurUnitIds,
+      pricePerUser: body.pricePerUser ?? 0,
       totalAmount: body.totalAmount,
       currency: body.currency,
       period: body.period,
@@ -396,14 +380,19 @@ export class SubscriptionController {
       const payment = await this.subscriptionService['prisma'].payment.findFirst({ where: { externalId: data.id } });
       if (payment && payment.status === 'PAID') {
         const meta: any = payment.metadata || {};
-        if (meta.mode === 'ORG_INVOICE' && Array.isArray(meta.userIds) && meta.labelId) {
-          await this.subscriptionService.activateBulkFromOrgInvoice({
-            labelId: meta.labelId,
-            userIds: meta.userIds,
-            pricePerUser: meta.pricePerUser || 0,
-            currency: meta.currency || 'IDR',
-            period: meta.period || 'MONTHLY',
-          });
+        if (meta.mode === 'ORG_INVOICE' && meta.labelId) {
+          const hasDapur = Array.isArray(meta.dapurUnitIds) && meta.dapurUnitIds.length > 0;
+          const hasLegacyUsers = Array.isArray(meta.userIds) && meta.userIds.length > 0;
+          if (hasDapur || hasLegacyUsers) {
+            await this.subscriptionService.activateBulkFromOrgInvoice({
+              labelId: meta.labelId,
+              dapurUnitIds: hasDapur ? meta.dapurUnitIds : [],
+              userIds: hasLegacyUsers ? meta.userIds : [],
+              pricePerUser: meta.pricePerUser || 0,
+              currency: meta.currency || 'IDR',
+              period: meta.period || 'MONTHLY',
+            });
+          }
         }
       }
     }

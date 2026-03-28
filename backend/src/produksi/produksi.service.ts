@@ -84,25 +84,35 @@ export class ProduksiService {
       let count = 0;
       for (const m of data.menus) {
         if (!m.name) continue;
-        const menu = await tx.menu.upsert({
-          where: { name_dapurUnitId: { name: m.name, dapurUnitId: data.dapurUnitId || null } },
-          update: {
-            category: m.category,
-            calories: m.calories || null,
-            protein: m.protein || null,
-            carbs: m.carbs || null,
-            fat: m.fat || null,
-          },
-          create: {
-            name: m.name,
-            category: m.category,
-            calories: m.calories || null,
-            protein: m.protein || null,
-            carbs: m.carbs || null,
-            fat: m.fat || null,
-            dapurUnitId: data.dapurUnitId || null,
-          }
+
+        let menu = await tx.menu.findFirst({
+          where: { name: m.name, dapurUnitId: data.dapurUnitId || null }
         });
+
+        if (menu) {
+          menu = await tx.menu.update({
+            where: { id: menu.id },
+            data: {
+              category: m.category,
+              calories: m.calories || null,
+              protein: m.protein || null,
+              carbs: m.carbs || null,
+              fat: m.fat || null,
+            }
+          });
+        } else {
+          menu = await tx.menu.create({
+            data: {
+              name: m.name,
+              category: m.category,
+              calories: m.calories || null,
+              protein: m.protein || null,
+              carbs: m.carbs || null,
+              fat: m.fat || null,
+              dapurUnitId: data.dapurUnitId || null,
+            }
+          });
+        }
         
         await tx.menuIngredient.deleteMany({ where: { menuId: menu.id } });
 
@@ -408,5 +418,88 @@ export class ProduksiService {
       },
       entriesCount: entries.length,
     };
+  }
+
+  async calculateHPP(monthlyPlanId: string, dateStart?: string, dateEnd?: string) {
+    const plan = await this.prisma.monthlyMenuPlan.findUnique({ where: { id: monthlyPlanId } });
+    if (!plan) throw new NotFoundException('Plan tidak ditemukan');
+
+    const whereDate: any = { monthlyPlanId };
+    if (dateStart) whereDate.date = { gte: new Date(dateStart) };
+    if (dateEnd) whereDate.date = { ...whereDate.date, lte: new Date(dateEnd) };
+
+    const entries = await this.prisma.dailyMenuEntry.findMany({
+      where: whereDate,
+      include: {
+        menu: {
+          include: {
+            ingredients: { include: { portionType: true } },
+          },
+        },
+        portions: { include: { portionType: true } },
+      },
+      orderBy: { date: 'asc' },
+    });
+
+    // Ambil harga terakhir dari PO Item untuk Dapur ini sebagai referensi "harga belanja"
+    const latestPOItems = await this.prisma.pOItem.findMany({
+      where: { purchaseOrder: { dapurUnitId: plan.dapurUnitId } },
+      orderBy: { purchaseOrder: { createdAt: 'desc' } },
+      select: { productName: true, pricePerUnit: true }
+    });
+
+    const priceMap: Record<string, number> = {};
+    for (const item of latestPOItems) {
+      if (item.productName && priceMap[item.productName.toLowerCase()] === undefined) {
+        priceMap[item.productName.toLowerCase()] = item.pricePerUnit;
+      }
+    }
+
+    const results = [];
+
+    for (const entry of entries) {
+      const dateKey = entry.date.toISOString().split('T')[0];
+      
+      for (const portion of entry.portions) {
+        let totalCostPerPortion = 0;
+
+        const relevantIngredients = entry.menu.ingredients.filter(
+          (ing) => ing.portionTypeId === portion.portionTypeId,
+        );
+
+        const ingredientDetails = [];
+
+        for (const ing of relevantIngredients) {
+          const neededGrams = ing.gramsPerPortion;
+          // Cari harga berdasarkan nama bahan baku (case insensitive)
+          const unitPrice = priceMap[ing.ingredientName.toLowerCase()] || 0;
+          const cost = unitPrice * neededGrams;
+          totalCostPerPortion += cost;
+
+          ingredientDetails.push({
+            ingredientName: ing.ingredientName,
+            needed: neededGrams,
+            unit: ing.unit,
+            unitPrice: unitPrice,
+            cost: cost
+          });
+        }
+
+        const quantity = portion.quantity;
+        const totalCostAllPortions = totalCostPerPortion * quantity;
+
+        results.push({
+          date: dateKey,
+          menuName: entry.menu.name,
+          portionTypeName: portion.portionType.name,
+          totalCost: totalCostAllPortions,
+          quantity: quantity,
+          hppPerPortion: totalCostPerPortion,
+          ingredients: ingredientDetails
+        });
+      }
+    }
+
+    return results;
   }
 }

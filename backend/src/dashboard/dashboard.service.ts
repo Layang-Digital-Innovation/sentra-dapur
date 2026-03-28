@@ -346,8 +346,11 @@ export class DashboardService {
         take: 10,
         orderBy: { startedAt: 'desc' },
         include: {
-          user: {
-            select: { email: true, role: true },
+          dapurUnit: {
+            select: {
+              name: true,
+              projectOwner: { select: { email: true, role: true } },
+            },
           },
         },
       }),

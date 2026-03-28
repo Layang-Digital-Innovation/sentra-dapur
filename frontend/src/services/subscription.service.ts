@@ -46,13 +46,52 @@ export const subscriptionService = {
     return data;
   },
 
-  async bulkSubscribeInvestorsForLabel(payload: { labelId: string; userIds: string[]; price: number; currency: string; period: 'MONTHLY' | 'YEARLY'; autoActivate?: boolean }) {
+  async bulkSubscribeDapursForLabel(payload: {
+    labelId: string;
+    dapurUnitIds: string[];
+    price: number;
+    currency: string;
+    period: 'MONTHLY' | 'YEARLY';
+    autoActivate?: boolean;
+  }) {
     const { data } = await axiosInstance.post('/subscription/enterprise/label/investors/bulk-subscribe', payload);
     return data;
   },
 
-  // Create a single organization invoice (ORG_INVOICE) for a label's selected users
-  async createOrgInvoiceForLabel(payload: { labelId: string; userIds: string[]; pricePerUser: number; totalAmount?: number; currency?: string; period: 'MONTHLY' | 'YEARLY'; provider?: 'xendit' | 'manual'; description?: string; invoiceNumber?: string; referenceNumber?: string; bankName?: string; paidBy?: string; notes?: string; awaitingApproval?: boolean; additionalSeats?: boolean; }) {
+  async getDapurUnitsForEnterpriseLabel(labelId: string) {
+    const { data } = await axiosInstance.get(`/subscription/enterprise/labels/${labelId}/dapur-units`);
+    return data as Array<{
+      id: string;
+      labelId: string;
+      dapurUnitId: string;
+      dapurUnit: {
+        id: string;
+        name: string;
+        location?: string | null;
+        projectOwner?: { id: string; fullname?: string; email: string; role: string };
+        adminDapur?: { id: string; fullname?: string; email: string };
+      };
+    }>;
+  },
+
+  // Create a single organization invoice (ORG_INVOICE) for a label's selected dapur units
+  async createOrgInvoiceForLabel(payload: {
+    labelId: string;
+    dapurUnitIds: string[];
+    pricePerUser: number;
+    totalAmount?: number;
+    currency?: string;
+    period: 'MONTHLY' | 'YEARLY';
+    provider?: 'xendit' | 'manual';
+    description?: string;
+    invoiceNumber?: string;
+    referenceNumber?: string;
+    bankName?: string;
+    paidBy?: string;
+    notes?: string;
+    awaitingApproval?: boolean;
+    additionalSeats?: boolean;
+  }) {
     const { data } = await axiosInstance.post('/subscription/enterprise/label/org-invoice', payload);
     return data;
   },

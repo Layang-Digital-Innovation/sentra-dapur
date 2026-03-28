@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { OrderStatus, ShipmentMethod, ShipmentStatus, ProductStatus } from '@prisma/client';
 
@@ -86,6 +86,34 @@ export class TradingService {
     return product;
   }
 
+  private async applyProductFieldsUpdate(
+    id: string,
+    data: Partial<{
+      name: string;
+      description: string;
+      prices: Array<{ currency: 'IDR' | 'USD'; price: number }>;
+      unit: string;
+      weight: number;
+      volume: string;
+    }>,
+  ) {
+    const { prices, ...rest } = data as any;
+    await this.prisma.product.update({
+      where: { id },
+      data: rest,
+    });
+    if (Array.isArray(prices)) {
+      await this.prisma.productPrice.deleteMany({ where: { productId: id } });
+      if (prices.length) {
+        await this.prisma.productPrice.createMany({
+          data: prices.map((p: any) => ({ productId: id, currency: p.currency as any, price: p.price })),
+          skipDuplicates: true,
+        });
+      }
+    }
+    return this.prisma.product.findUnique({ where: { id }, include: { prices: true } });
+  }
+
   async updateProduct(id: string, sellerId: string, data: Partial<{
     name: string;
     description: string;
@@ -106,23 +134,41 @@ export class TradingService {
       throw new ForbiddenException('You do not have permission to update this product');
     }
 
-    // Update scalar fields
-    const { prices, ...rest } = data as any;
-    const updated = await this.prisma.product.update({
-      where: { id },
-      data: rest,
-    });
-    // Replace prices if provided
-    if (Array.isArray(prices)) {
-      await this.prisma.productPrice.deleteMany({ where: { productId: id } });
-      if (prices.length) {
-        await this.prisma.productPrice.createMany({
-          data: prices.map((p: any) => ({ productId: id, currency: p.currency as any, price: p.price })),
-          skipDuplicates: true,
-        });
-      }
+    return this.applyProductFieldsUpdate(id, data);
+  }
+
+  /** Admin pusat / trading: update any product without seller ownership check */
+  async adminUpdateProduct(id: string, data: Partial<{
+    name: string;
+    description: string;
+    prices: Array<{ currency: 'IDR' | 'USD'; price: number }>;
+    unit: string;
+    weight: number;
+    volume: string;
+  }>) {
+    const product = await this.prisma.product.findUnique({ where: { id } });
+    if (!product) {
+      throw new NotFoundException('Product not found');
     }
-    return this.prisma.product.findUnique({ where: { id }, include: { prices: true } });
+    return this.applyProductFieldsUpdate(id, data);
+  }
+
+  async deleteProductAsAdmin(id: string) {
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+      include: { _count: { select: { orders: true } } },
+    });
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+    if (product._count.orders > 0) {
+      throw new BadRequestException('Produk tidak dapat dihapus karena sudah memiliki pesanan.');
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.pOItem.updateMany({ where: { productId: id }, data: { productId: null } });
+      await tx.product.delete({ where: { id } });
+    });
+    return { ok: true };
   }
 
   async getSellerProducts(sellerId: string) {

@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { menuApi, portionTypeApi, Menu, PortionType } from "@/services/produksi.service";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
-import { FiBook, FiPlus, FiEdit2, FiTrash2, FiChevronDown, FiChevronUp, FiSave, FiX, FiUpload, FiDownload, FiActivity, FiGlobe } from "react-icons/fi";
+import { FiBook, FiPlus, FiEdit2, FiTrash2, FiChevronDown, FiChevronUp, FiSave, FiX, FiUpload, FiDownload, FiActivity, FiGlobe, FiRefreshCw } from "react-icons/fi";
 import * as XLSX from "xlsx";
 
 type IngredientForm = { portionTypeId: string; ingredientName: string; unit: string; gramsPerPortion: number };
@@ -136,6 +136,41 @@ export default function DapurMenuPage() {
     setIngredientRows(prev => prev.map((r, i) => i === idx ? { ...r, [field]: value } : r));
   };
   const removeRow = (idx: number) => setIngredientRows(prev => prev.filter((_, i) => i !== idx));
+
+  // Smart Unit Converter
+  const handleConvertUnit = (idx: number) => {
+    setIngredientRows(prev => {
+      const newRows = [...prev];
+      const row = newRows[idx];
+      if (!row) return newRows;
+      
+      const unit = row.unit.toLowerCase().trim();
+      let newQty = row.gramsPerPortion;
+      let newUnit = row.unit;
+
+      if (unit === 'kg' || unit === 'kilogram') {
+        newQty = newQty * 1000;
+        newUnit = 'Gram';
+      } else if (unit === 'liter' || unit === 'l') {
+        newQty = newQty * 1000;
+        newUnit = 'Mililiter';
+      } else if (unit === 'ons') {
+        newQty = newQty * 100;
+        newUnit = 'Gram';
+      } else if (unit === 'sdm') {
+        newQty = newQty * 15;
+        newUnit = 'Gram';
+      } else if (unit === 'sdt') {
+        newQty = newQty * 5;
+        newUnit = 'Gram';
+      } else {
+        return newRows; // no conversion needed
+      }
+
+      newRows[idx] = { ...row, gramsPerPortion: newQty, unit: newUnit };
+      return newRows;
+    });
+  };
 
   const saveIngredients = async (menuId: string) => {
     const valid = ingredientRows.filter(r => r.ingredientName.trim() && r.portionTypeId && r.gramsPerPortion > 0);
@@ -482,14 +517,36 @@ export default function DapurMenuPage() {
                                       placeholder="0"
                                     />
                                   </div>
-                                  <div className="w-20">
+                                  <div className="w-24">
                                     <label className="sm:hidden block text-xs font-semibold text-gray-500 mb-1">Satuan</label>
-                                    <input
-                                      type="text"
-                                      value={row.unit}
-                                      onChange={e => updateRow(idx, "unit", e.target.value)}
-                                      className="w-full border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-400 bg-slate-50 text-center"
-                                    />
+                                    <div className="relative flex items-center">
+                                      <input
+                                        type="text"
+                                        list="standard-units"
+                                        value={row.unit}
+                                        onChange={e => updateRow(idx, "unit", e.target.value)}
+                                        className="w-full border border-gray-200 rounded-lg pl-2 pr-8 py-2 text-sm focus:outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-400 bg-slate-50"
+                                      />
+                                      <button 
+                                        type="button"
+                                        onClick={() => handleConvertUnit(idx)}
+                                        className="absolute right-2 text-amber-500 hover:text-amber-600 transition-colors"
+                                        title="Konversi Otomatis ke Unit Dasar (cth: Kg -> Gram)"
+                                      >
+                                        <FiRefreshCw className="w-4 h-4" />
+                                      </button>
+                                      <datalist id="standard-units">
+                                        <option value="Gram"></option>
+                                        <option value="Kg"></option>
+                                        <option value="Mililiter"></option>
+                                        <option value="Liter"></option>
+                                        <option value="Pcs"></option>
+                                        <option value="Lembar"></option>
+                                        <option value="Ikat"></option>
+                                        <option value="Bungkus"></option>
+                                        <option value="Sdm"></option>
+                                      </datalist>
+                                    </div>
                                   </div>
                                 </div>
                                 <div className="col-span-1 flex items-center justify-end sm:pt-2">

@@ -37,6 +37,9 @@ export default function Dashboard() {
             case 'ADMIN_DAPUR':
               router.replace('/dashboard/admin-dapur');
               break;
+            case 'PRODUKSI':
+              router.replace('/dashboard/produksi');
+              break;
             case 'BUYER':
               router.replace('/dashboard/buyer');
               break;

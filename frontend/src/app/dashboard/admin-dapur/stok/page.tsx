@@ -92,18 +92,20 @@ export default function AdminDapurStokPage({ category }: { category?: "BAHAN" | 
 
   const openReceiveModal = (po: PurchaseOrder) => {
     setSelectedPO(po);
+    const isFollowUp = po.status === "DELIVERED";
     setPenerimaanForm({
       notes: "",
-      items: po.items.map(item => ({
+      items: po.items.map((item) => ({
         poItemId: item.id,
         productName: item.productName || "",
         orderedQty: item.quantity,
-        quantityReceived: item.quantity, // Default to total ordered
+        // Penerimaan pertama: default gross = qty order. Lanjutan (PO sudah DELIVERED): default 0 agar retur/reject mengurangi stok tanpa menambah "diterima" lagi.
+        quantityReceived: isFollowUp ? 0 : item.quantity,
         quantityRejected: 0,
         quantityReturned: 0,
         qualityCheck: "Baik",
-        notes: ""
-      }))
+        notes: "",
+      })),
     });
     setIsModalOpen(true);
   };
@@ -355,6 +357,11 @@ export default function AdminDapurStokPage({ category }: { category?: "BAHAN" | 
                      <FiArrowDown className="text-amber-600" /> Penerimaan Barang Terpadu
                    </h2>
                    <p className="text-slate-400 text-sm font-medium">Verifikasi kuantitas & kualitas barang yang masuk ke gudang.</p>
+                   {selectedPO.status === "DELIVERED" && (
+                     <p className="text-amber-700 text-xs font-semibold mt-2">
+                       PO ini sudah pernah diterima. Untuk mencatat retur/reject tambahan saja, isi <strong>Diterima = 0</strong> lalu isi Reject/Return — stok akan berkurang sesuai netto.
+                     </p>
+                   )}
                  </div>
                  <button onClick={() => setIsModalOpen(false)} className="h-10 w-10 bg-slate-50 text-slate-400 hover:text-red-500 rounded-full flex items-center justify-center transition-colors">
                    <FiX className="w-6 h-6" />
@@ -460,7 +467,7 @@ export default function AdminDapurStokPage({ category }: { category?: "BAHAN" | 
                                 />
                              </div>
                              <div className="pt-2">
-                                <p className="text-[10px] text-slate-400 leading-relaxed italic">Input ini akan secara otomatis memperbarui Stok Gudang dan status Purchase Order menjadi Delivered.</p>
+                                <p className="text-[10px] text-slate-400 leading-relaxed italic">Stok gudang berubah sebesar netto (Diterima − Reject − Return), termasuk berkurang jika netto negatif pada penerimaan lanjutan.</p>
                              </div>
                           </div>
                        </div>
@@ -479,6 +486,16 @@ export default function AdminDapurStokPage({ category }: { category?: "BAHAN" | 
                              <div className="flex justify-between text-xs font-bold">
                                 <span className="text-slate-500">Total Reject/Return:</span>
                                 <span className="text-red-500">{penerimaanForm.items.reduce((acc, curr) => acc + curr.quantityRejected + curr.quantityReturned, 0)}</span>
+                             </div>
+                             <div className="flex justify-between text-xs font-bold border-t border-slate-200 pt-2 mt-2">
+                                <span className="text-slate-500">Δ Stok (netto):</span>
+                                <span className="text-slate-900">
+                                  {penerimaanForm.items.reduce(
+                                    (acc, curr) =>
+                                      acc + (curr.quantityReceived - curr.quantityRejected - curr.quantityReturned),
+                                    0
+                                  )}
+                                </span>
                              </div>
                           </div>
                        </div>

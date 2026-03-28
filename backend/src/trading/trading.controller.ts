@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Param, Body, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards, Request } from '@nestjs/common';
 import { TradingService } from './trading.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -97,6 +97,30 @@ export class TradingController {
   @Roles(Role.ADMIN, Role.ADMIN_TRADING, Role.SUPER_ADMIN)
   async rejectProduct(@Request() req, @Param('id') id: string, @Body('reason') reason?: string) {
     return this.tradingService.rejectProduct(id, req.user.id, reason);
+  }
+
+  @Put('admin/products/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN_PUSAT, Role.ADMIN, Role.ADMIN_TRADING, Role.SUPER_ADMIN)
+  async adminUpdateProduct(
+    @Param('id') id: string,
+    @Body() data: Partial<{
+      name: string;
+      description: string;
+      prices: Array<{ currency: 'IDR' | 'USD'; price: number }>;
+      unit: string;
+      weight: number;
+      volume: string;
+    }>,
+  ) {
+    return this.tradingService.adminUpdateProduct(id, data);
+  }
+
+  @Delete('admin/products/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN_PUSAT, Role.ADMIN, Role.ADMIN_TRADING, Role.SUPER_ADMIN)
+  async adminDeleteProduct(@Param('id') id: string) {
+    return this.tradingService.deleteProductAsAdmin(id);
   }
 
   // Order Endpoints

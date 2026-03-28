@@ -84,8 +84,8 @@ class UserService {
 
     // Use different endpoint based on user role
     const userRole = this.getUserRole();
-    // SUPER_ADMIN, PROJECT_OWNER, ADMIN_PUSAT, ADMIN_DAPUR use /users (backend scopes access per role)
-    const endpoint = (userRole === 'SUPER_ADMIN' || userRole === 'PROJECT_OWNER' || userRole === 'ADMIN_PUSAT' || userRole === 'ADMIN_DAPUR') 
+    // SUPER_ADMIN, PROJECT_OWNER, ADMIN_PUSAT, ADMIN_DAPUR, PRODUKSI use /users (backend scopes access per role)
+    const endpoint = (userRole === 'SUPER_ADMIN' || userRole === 'PROJECT_OWNER' || userRole === 'ADMIN_PUSAT' || userRole === 'ADMIN_DAPUR' || userRole === 'PRODUKSI') 
       ? '/users' 
       : '/users/admin-view';
     const url = `${API_BASE_URL}${endpoint}${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;

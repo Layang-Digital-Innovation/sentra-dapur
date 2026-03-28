@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   FiPackage, FiSearch, FiImage, FiPlus, FiX, FiCheck,
   FiUsers, FiEdit2, FiRefreshCw, FiMail, FiLock, FiUser,
-  FiUpload, FiDownload
+  FiUpload, FiDownload, FiTrash2
 } from "react-icons/fi";
 import * as XLSX from "xlsx";
 import { tradingService } from "@/services/trading.service";
@@ -21,7 +21,7 @@ interface Product {
   unit: string;
   weight: number;
   volume: string;
-  seller: { fullname: string; email: string; companyName?: string };
+  seller?: { id?: string; fullname: string; email: string; companyName?: string };
   images?: Array<{ url: string; isCover: boolean }>;
 }
 
@@ -48,8 +48,9 @@ export default function AdminPusatMarketplacePage() {
   const [modalSuccess, setModalSuccess] = useState<string | null>(null);
   const [modalError, setModalError] = useState<string | null>(null);
 
-  // === Modal state (create product) ===
+  // === Modal state (create / edit product) ===
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [targetSeller, setTargetSeller] = useState<User | null>(null);
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
   const [productForm, setProductForm] = useState({ name: "", description: "", price: "", unit: "kg", weight: "1", volume: "0.01" });
@@ -136,6 +137,7 @@ export default function AdminPusatMarketplacePage() {
   };
 
   const openCreateProduct = (s: User | null = null) => {
+    setEditingProduct(null);
     setTargetSeller(s);
     setSelectedSupplierId("");
     setProductForm({ name: "", description: "", price: "", unit: "kg", weight: "1", volume: "0.01" });
@@ -144,8 +146,35 @@ export default function AdminPusatMarketplacePage() {
     setIsProductModalOpen(true);
   };
 
+  const openEditProduct = (p: Product) => {
+    const idr = p.prices?.find(x => x.currency === "IDR");
+    const priceVal = idr != null ? idr.price : p.price;
+    setEditingProduct(p);
+    const sid = p.seller?.id;
+    if (sid) {
+      const sup = suppliers.find(u => u.id === sid);
+      setTargetSeller(sup ?? null);
+      setSelectedSupplierId(sup ? "" : sid);
+    } else {
+      setTargetSeller(null);
+      setSelectedSupplierId("");
+    }
+    setProductForm({
+      name: p.name,
+      description: p.description || "",
+      price: priceVal != null && priceVal !== undefined ? String(priceVal) : "",
+      unit: p.unit || "kg",
+      weight: String(p.weight ?? "1"),
+      volume: p.volume || "0.01",
+    });
+    setModalError(null);
+    setModalSuccess(null);
+    setIsProductModalOpen(true);
+  };
+
   const closeProductModal = () => {
     setIsProductModalOpen(false);
+    setEditingProduct(null);
     setTargetSeller(null);
     setModalError(null);
   };
@@ -188,6 +217,33 @@ export default function AdminPusatMarketplacePage() {
 
   const handleProductSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (editingProduct) {
+      setSubmitting(true);
+      setModalError(null);
+      setModalSuccess(null);
+      try {
+        await tradingService.adminUpdateProduct(editingProduct.id, {
+          name: productForm.name,
+          description: productForm.description,
+          prices: [{ currency: "IDR", price: Number(productForm.price) }],
+          unit: productForm.unit,
+          weight: Number(productForm.weight),
+          volume: productForm.volume,
+        });
+        setModalSuccess("Perubahan produk berhasil disimpan.");
+        fetchProducts();
+        setTimeout(() => {
+          closeProductModal();
+        }, 1200);
+      } catch (err: any) {
+        const msg = err?.response?.data?.message;
+        setModalError(Array.isArray(msg) ? msg.join(", ") : (msg || err.message || "Gagal menyimpan produk."));
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
     const finalSellerId = targetSeller ? targetSeller.id : selectedSupplierId;
     if (!finalSellerId) {
       setModalError("Anda harus memilih supplier untuk produk ini.");
@@ -214,9 +270,21 @@ export default function AdminPusatMarketplacePage() {
         closeProductModal();
       }, 1500);
     } catch (err: any) {
-      setModalError(err.message || "Gagal menyimpan produk.");
+      const msg = err?.response?.data?.message;
+      setModalError(Array.isArray(msg) ? msg.join(", ") : (msg || err.message || "Gagal menyimpan produk."));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleDeleteProduct = async (p: Product) => {
+    if (!window.confirm(`Hapus "${p.name}" dari katalog? Tindakan ini tidak dapat dibatalkan.`)) return;
+    try {
+      await tradingService.adminDeleteProduct(p.id);
+      await fetchProducts();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message;
+      window.alert(Array.isArray(msg) ? msg.join(", ") : (msg || err.message || "Gagal menghapus produk."));
     }
   };
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -458,10 +526,26 @@ export default function AdminPusatMarketplacePage() {
                       </div>
                       <h3 className="font-bold text-gray-900 text-lg leading-tight mb-2 line-clamp-2">{product.name}</h3>
                       <p className="text-gray-500 text-sm line-clamp-2 mb-4 flex-1">{product.description || "Tidak ada deskripsi"}</p>
-                      <div className="mt-auto pt-4 border-t border-gray-100 flex items-center justify-between">
-                        <div>
+                      <div className="mt-auto pt-4 border-t border-gray-100 flex items-center justify-between gap-2">
+                        <div className="min-w-0">
                           <p className="text-xs text-gray-400 mb-0.5">Harga per {product.unit}</p>
                           <p className="font-bold text-slate-900">{getPrice(product)}</p>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => openEditProduct(product)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition"
+                          >
+                            <FiEdit2 className="h-3.5 w-3.5" /> Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteProduct(product)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition"
+                          >
+                            <FiTrash2 className="h-3.5 w-3.5" /> Hapus
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -698,9 +782,9 @@ export default function AdminPusatMarketplacePage() {
             <div className="p-5 bg-gray-50 border-b flex items-center justify-between shrink-0">
               <h2 className="font-bold text-slate-900 flex items-center gap-2">
                 <span className="p-1.5 bg-amber-100 text-amber-700 rounded-md">
-                  <FiPackage className="h-4 w-4" />
+                  {editingProduct ? <FiEdit2 className="h-4 w-4" /> : <FiPackage className="h-4 w-4" />}
                 </span>
-                Tambah Produk Katalog
+                {editingProduct ? "Edit Produk Katalog" : "Tambah Produk Katalog"}
               </h2>
               <button onClick={closeProductModal} className="text-slate-400 hover:text-slate-600 transition">
                 <FiX className="h-5 w-5" />
@@ -708,7 +792,16 @@ export default function AdminPusatMarketplacePage() {
             </div>
 
             <div className="p-6 overflow-y-auto custom-scrollbar">
-              {targetSeller && (
+              {editingProduct && (
+                <div className="mb-4 text-sm text-gray-600 bg-slate-50 rounded-lg p-3 border border-slate-100">
+                  Supplier:{" "}
+                  <strong className="text-slate-800">
+                    {targetSeller?.fullName || targetSeller?.email || editingProduct.seller?.fullname || editingProduct.seller?.email || "—"}
+                  </strong>
+                  <span className="text-gray-400 text-xs block mt-1">Pemilik produk tidak dapat diubah dari sini.</span>
+                </div>
+              )}
+              {!editingProduct && targetSeller && (
                 <div className="mb-4 text-sm text-gray-500 bg-amber-50 rounded-lg p-3 border border-amber-100">
                   Produk ini akan dimasukkan ke katalog atas nama Supplier: <strong className="text-amber-800">{targetSeller.fullName || targetSeller.email}</strong>
                 </div>
@@ -726,7 +819,7 @@ export default function AdminPusatMarketplacePage() {
               )}
 
               <form onSubmit={handleProductSubmit} className="space-y-4">
-                {!targetSeller && (
+                {!editingProduct && !targetSeller && (
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Pilih Supplier <span className="text-red-500">*</span></label>
                     <select
@@ -775,7 +868,7 @@ export default function AdminPusatMarketplacePage() {
                 <div className="pt-4 flex items-center justify-end gap-3 border-t mt-4">
                   <button type="button" onClick={closeProductModal} className="px-4 py-2 text-sm font-medium text-slate-700 hover:text-slate-900 transition">Batal</button>
                   <button type="submit" disabled={submitting} className="px-4 py-2 text-sm font-medium text-white bg-amber-600 rounded-lg hover:bg-amber-700 disabled:opacity-70 disabled:cursor-not-allowed transition flex items-center gap-2">
-                    {submitting ? "Menyimpan..." : "Simpan Produk"}
+                    {submitting ? "Menyimpan..." : editingProduct ? "Simpan Perubahan" : "Simpan Produk"}
                   </button>
                 </div>
               </form>

@@ -71,7 +71,7 @@ export class UsersController {
   // ─── SUPER_ADMIN / PROJECT_OWNER / ADMIN_PUSAT / ADMIN_DAPUR user management ─
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(R.SUPER_ADMIN, R.PROJECT_OWNER, R.ADMIN_PUSAT, R.ADMIN_DAPUR)
+  @Roles(R.SUPER_ADMIN, R.PROJECT_OWNER, R.ADMIN_PUSAT, R.ADMIN_DAPUR, R.PRODUKSI)
   async getAllUsers(
     @Request() req,
     @Query('page') page?: string,
@@ -99,14 +99,14 @@ export class UsersController {
         role: filteredRole,
       });
     }
-    if (req.user.role === R.ADMIN_DAPUR) {
+    if (req.user.role === R.ADMIN_DAPUR || req.user.role === R.PRODUKSI) {
       const allowedRoles: Role[] = [R.PRODUKSI, R.SUPPLIER];
       const filteredRole = role && allowedRoles.includes(role) ? role : undefined;
       return this.usersService.findAll({
         page: page ? parseInt(page) : 1,
         limit: limit ? parseInt(limit) : 50,
         search,
-        role: filteredRole || R.PRODUKSI, // Default check only PRODUKSI or requested explicit allowing
+        role: filteredRole || (req.user.role === R.ADMIN_DAPUR ? R.PRODUKSI : R.SUPPLIER), // Default check
       });
     }
     return this.usersService.findAll({

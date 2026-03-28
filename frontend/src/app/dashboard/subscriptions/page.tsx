@@ -5,17 +5,30 @@ import { useRouter } from 'next/navigation';
 import RoleGuard from '@/components/auth/RoleGuard';
 import { Role } from '@/types/user.types';
 import { subscriptionService } from '@/services/subscription.service';
-import { userService } from '@/services/user.service';
-import { FiPlus, FiCreditCard, FiTag, FiLayers, FiUpload, FiCheck, FiAlertTriangle, FiSearch, FiExternalLink, FiCopy } from 'react-icons/fi';
+import { FiPlus, FiCreditCard, FiTag, FiLayers, FiCheck, FiAlertTriangle, FiSearch, FiExternalLink, FiCopy } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import { settingsService } from '@/services/settings.service';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface SubscriptionItem {
   id: string;
+  dapurUnitId: string;
   plan: string;
   status: string;
-  user: { id: string; email: string; fullname?: string; role: string; labelInvestors?: Array<{ label: { id: string; name: string } }> };
+  dapurUnit?: {
+    id: string;
+    name: string;
+    location?: string | null;
+    projectOwner?: {
+      id: string;
+      email: string;
+      fullname?: string;
+      role: string;
+      labelInvestors?: Array<{ label: { id: string; name: string } }>;
+    };
+    adminDapur?: { id: string; email: string; fullname?: string };
+    labelDapurs?: Array<{ label: { id: string; name: string } }>;
+  };
   startedAt?: string;
   currentPeriodEnd?: string;
   trialEndsAt?: string;
@@ -60,7 +73,7 @@ export default function SubscriptionsAdminPage() {
 
   // Bulk subscribe state
   const [selectedLabelId, setSelectedLabelId] = useState('');
-  const [investorsForSubscription, setInvestorsForSubscription] = useState<string[]>([]);
+  const [selectedDapurUnitIds, setSelectedDapurUnitIds] = useState<string[]>([]);
   const [price, setPrice] = useState<number>(0);
   const [orgTotalMode, setOrgTotalMode] = useState<boolean>(false);
   const [orgTotalAmount, setOrgTotalAmount] = useState<number>(0);
@@ -80,26 +93,39 @@ export default function SubscriptionsAdminPage() {
   const [awaitingApproval, setAwaitingApproval] = useState(false);
   const [additionalSeats, setAdditionalSeats] = useState(false);
 
-  // Bulk subscribe user picker state
-  const [roleFilter, setRoleFilter] = useState<Role | undefined>(undefined);
-  const [userSearch, setUserSearch] = useState('');
-  const [userPage, setUserPage] = useState(1);
-  const [userLimit] = useState(10);
-  const [userResults, setUserResults] = useState<{ users: any[]; total: number }>({ users: [], total: 0 });
-  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [dapurRows, setDapurRows] = useState<
+    Awaited<ReturnType<typeof subscriptionService.getDapurUnitsForEnterpriseLabel>>
+  >([]);
+  const [dapurSearch, setDapurSearch] = useState('');
+  const [loadingDapurs, setLoadingDapurs] = useState(false);
 
-  // Users already subscribed to ENTERPRISE_CUSTOM under the selected label (to show badges in picker)
+  // Dapur units already on ENTERPRISE_CUSTOM under the selected label (badges in picker)
   const alreadySubscribedSet = useMemo(() => {
     const set = new Set<string>();
     if (!selectedLabelId) return set;
     for (const s of subscriptions) {
       if (s.plan === 'ENTERPRISE_CUSTOM') {
-        const lblId = (s as any)?.label?.id || s.user?.labelInvestors?.[0]?.label?.id;
-        if (lblId === selectedLabelId) set.add(s.user.id);
+        const lblId = s.label?.id;
+        if (lblId === selectedLabelId && s.dapurUnitId) set.add(s.dapurUnitId);
       }
     }
     return set;
   }, [subscriptions, selectedLabelId]);
+
+  const filteredDapurRows = useMemo(() => {
+    const q = dapurSearch.trim().toLowerCase();
+    if (!q) return dapurRows;
+    return dapurRows.filter((row) => {
+      const du = row.dapurUnit;
+      const emails = [du?.projectOwner?.email, du?.adminDapur?.email].filter(Boolean).join(' ');
+      return (
+        (du?.name || '').toLowerCase().includes(q) ||
+        (du?.location || '').toLowerCase().includes(q) ||
+        emails.toLowerCase().includes(q) ||
+        (du?.projectOwner?.fullname || '').toLowerCase().includes(q)
+      );
+    });
+  }, [dapurRows, dapurSearch]);
 
   // Subscriptions table controls
   const [subsSearch, setSubsSearch] = useState('');
@@ -227,22 +253,25 @@ export default function SubscriptionsAdminPage() {
     return val.toLowerCase().split('_').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
   };
 
-  // Load users for Bulk Subscribe picker
   useEffect(() => {
-    const loadUsers = async () => {
-      if (!showBulkSubscribeModal) return;
-      setLoadingUsers(true);
+    const loadDapurs = async () => {
+      if (!showBulkSubscribeModal || !selectedLabelId) {
+        setDapurRows([]);
+        return;
+      }
+      setLoadingDapurs(true);
       try {
-        const res = await userService.getAllUsers({ role: roleFilter, search: userSearch || undefined, page: userPage, limit: userLimit });
-        setUserResults({ users: res.users || [], total: res.total || 0 });
+        const rows = await subscriptionService.getDapurUnitsForEnterpriseLabel(selectedLabelId);
+        setDapurRows(rows || []);
       } catch (e: any) {
-        console.error('Load users failed', e);
+        console.error('Load dapur units for label failed', e);
+        setDapurRows([]);
       } finally {
-        setLoadingUsers(false);
+        setLoadingDapurs(false);
       }
     };
-    loadUsers();
-  }, [showBulkSubscribeModal, roleFilter, userSearch, userPage, userLimit]);
+    loadDapurs();
+  }, [showBulkSubscribeModal, selectedLabelId]);
 
   const getEndStr = (s: SubscriptionItem) => s.status === 'TRIAL' ? (s.trialEndsAt || s.expiresAt) : (s.currentPeriodEnd || s.expiresAt);
   const isExpiredSub = (s: SubscriptionItem) => {
@@ -271,11 +300,14 @@ export default function SubscriptionsAdminPage() {
     const q = subsSearch.trim().toLowerCase();
     return subscriptions.filter((s) => {
       const byPlan = subsPlanFilter ? s.plan === subsPlanFilter : true;
+      const owner = s.dapurUnit?.projectOwner;
       const byQuery = !q
         ? true
         : (
-            (s.user?.email?.toLowerCase().includes(q)) ||
-            (s.user?.fullname?.toLowerCase?.().includes(q)) ||
+            (s.dapurUnit?.name?.toLowerCase().includes(q)) ||
+            (s.dapurUnit?.location?.toLowerCase?.().includes(q)) ||
+            (owner?.email?.toLowerCase().includes(q)) ||
+            (owner?.fullname?.toLowerCase?.().includes(q)) ||
             (s.label?.name?.toLowerCase().includes(q)) ||
             (formatPlanLabel(s.plan).toLowerCase().includes(q)) ||
             (s.status?.toLowerCase().includes(q))
@@ -317,9 +349,10 @@ export default function SubscriptionsAdminPage() {
   // Renew Enterprise Custom for a single user (manual org invoice via label)
   const handleRenewSubmit = async () => {
     if (!renewTarget) return;
-    const labelId = renewTarget.label?.id || renewTarget.user?.labelInvestors?.[0]?.label?.id;
-    if (!labelId) {
-      toast.warn('Label organisasi tidak ditemukan untuk subscription ini');
+    const labelId = renewTarget.label?.id;
+    const dapurId = renewTarget.dapurUnitId || renewTarget.dapurUnit?.id;
+    if (!labelId || !dapurId) {
+      toast.warn('Label atau unit dapur tidak ditemukan untuk subscription ini');
       return;
     }
     if (renewPrice <= 0) {
@@ -330,12 +363,12 @@ export default function SubscriptionsAdminPage() {
     try {
       const res = await subscriptionService.createOrgInvoiceForLabel({
         labelId,
-        userIds: [renewTarget.user.id],
+        dapurUnitIds: [dapurId],
         pricePerUser: renewPrice,
         currency: renewCurrency,
         period: renewPeriod,
         provider: 'manual',
-        description: `Enterprise Custom ${renewPeriod} renewal - ${renewTarget.user.email}`,
+        description: `Enterprise Custom ${renewPeriod} renewal - ${renewTarget.dapurUnit?.name || dapurId}`,
         invoiceNumber: renewInvoiceNumber || undefined,
         referenceNumber: renewReferenceNumber || undefined,
         bankName: renewBankName || undefined,
@@ -380,8 +413,8 @@ export default function SubscriptionsAdminPage() {
       toast.warn('Label belum dipilih');
       return;
     }
-    if (investorsForSubscription.length === 0) {
-      toast.warn('Tidak ada investor yang dipilih');
+    if (selectedDapurUnitIds.length === 0) {
+      toast.warn('Pilih minimal satu unit dapur');
       return;
     }
     if (price <= 0) {
@@ -393,13 +426,13 @@ export default function SubscriptionsAdminPage() {
       if (billingMode === 'org_invoice') {
         const res = await subscriptionService.createOrgInvoiceForLabel({
           labelId: selectedLabelId,
-          userIds: investorsForSubscription,
+          dapurUnitIds: selectedDapurUnitIds,
           pricePerUser: orgTotalMode ? 0 : price,
           totalAmount: orgTotalMode ? orgTotalAmount : undefined,
           currency,
           period,
           provider: orgProvider,
-          description: `Enterprise Custom ${period} - ${investorsForSubscription.length} users`,
+          description: `Enterprise Custom ${period} - ${selectedDapurUnitIds.length} unit dapur`,
           // manual fields (invoice number auto-generated; reference set later at approval)
           paidBy: orgProvider === 'manual' ? paidBy || undefined : undefined,
           notes: (function(){
@@ -431,15 +464,15 @@ export default function SubscriptionsAdminPage() {
         // Auto-close modal after successful creation
         setShowBulkSubscribeModal(false);
       } else {
-        const res = await subscriptionService.bulkSubscribeInvestorsForLabel({
+        const res = await subscriptionService.bulkSubscribeDapursForLabel({
           labelId: selectedLabelId,
-          userIds: investorsForSubscription,
+          dapurUnitIds: selectedDapurUnitIds,
           price,
           currency,
           period,
           autoActivate,
         });
-        toast.success(`Berhasil subscribe ${res.count} investor`);
+        toast.success(`Berhasil subscribe ${res.count} unit dapur`);
         setShowBulkSubscribeModal(false);
       }
     } catch (error: any) {
@@ -514,7 +547,7 @@ export default function SubscriptionsAdminPage() {
             <h2 className="text-xl font-semibold flex items-center text-black"><FiCreditCard className="mr-2" /> Subscriptions Overview</h2>
             <div className="w-full sm:w-auto flex flex-wrap items-center gap-2">
               <button onClick={() => setShowCreateLabelModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1.5 text-xs md:px-3 md:py-2 md:text-sm rounded flex items-center"><FiTag className="mr-2" /> Create Label</button>
-              <button onClick={() => { setOrgPaymentLink(null); setBillingMode('per_user'); setOrgProvider('xendit'); setInvoiceNumber(''); setReferenceNumber(''); setBankName(''); setPaidBy(''); setNotes(''); setAwaitingApproval(false); setAdditionalSeats(false); setShowBulkSubscribeModal(true); }} className="bg-slate-900 hover:bg-slate-800 text-white px-2.5 py-1.5 text-xs md:px-3 md:py-2 md:text-sm rounded flex items-center"><FiCreditCard className="mr-2" /> Bulk Subscribe</button>
+              <button onClick={() => { setOrgPaymentLink(null); setBillingMode('per_user'); setOrgProvider('xendit'); setInvoiceNumber(''); setReferenceNumber(''); setBankName(''); setPaidBy(''); setNotes(''); setAwaitingApproval(false); setAdditionalSeats(false); setSelectedDapurUnitIds([]); setDapurSearch(''); setShowBulkSubscribeModal(true); }} className="bg-slate-900 hover:bg-slate-800 text-white px-2.5 py-1.5 text-xs md:px-3 md:py-2 md:text-sm rounded flex items-center"><FiCreditCard className="mr-2" /> Bulk Subscribe</button>
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -528,10 +561,10 @@ export default function SubscriptionsAdminPage() {
                 <div key={s.id} className={`rounded-lg border p-4 ${expired ? 'bg-gray-50 border-gray-300' : s.status === 'ACTIVE' ? 'bg-green-50 border-green-200' : s.status === 'TRIAL' ? 'bg-yellow-50 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>
                   <div className="flex items-center justify-between mb-2">
                     <div className="text-sm text-gray-900 truncate">
-                      <div className="font-semibold text-black truncate">{s.user?.fullname || s.user?.email}</div>
-                      {s.user?.fullname && (
-                        <div className="text-xs text-gray-600 truncate">{s.user?.email}</div>
-                      )}
+                      <div className="font-semibold text-black truncate">{s.dapurUnit?.name || 'Unit dapur'}</div>
+                      <div className="text-xs text-gray-600 truncate">
+                        {s.dapurUnit?.projectOwner?.fullname || s.dapurUnit?.projectOwner?.email || '—'}
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       {expiringSoon && !expired && (
@@ -541,7 +574,7 @@ export default function SubscriptionsAdminPage() {
                     </div>
                   </div>
                   <div className="text-xs text-gray-600">Plan: <span className="font-semibold text-gray-900">{formatPlanLabel(s.plan)}</span></div>
-                  <div className="text-xs text-gray-600 mt-1">Label: <span className="font-semibold text-gray-900">{s.label?.name || s.user?.labelInvestors?.[0]?.label?.name || '-'}</span></div>
+                  <div className="text-xs text-gray-600 mt-1">Label: <span className="font-semibold text-gray-900">{s.label?.name || '-'}</span></div>
                   <div className="text-xs text-gray-600 mt-1">Period End: {endStr ? new Date(endStr).toLocaleDateString() : '-'}</div>
                   {(s.plan === 'ENTERPRISE_CUSTOM' && expired) && (
                     <div className="mt-2">
@@ -657,7 +690,7 @@ export default function SubscriptionsAdminPage() {
                   <div className="col-span-1 sm:col-span-2 lg:col-span-4 flex flex-wrap items-center gap-2">
                     <label className="text-sm text-black">Mode</label>
                     <select value={billingMode} onChange={(e) => setBillingMode(e.target.value as any)} className="border rounded px-2 py-1.5 text-sm text-black">
-                      <option value="per_user">Per-user (tiap user bayar)</option>
+                      <option value="per_user">Per unit dapur (invoice/pembayaran per dapur)</option>
                       <option value="org_invoice">Organization pays (satu invoice)</option>
                     </select>
                     {billingMode === 'org_invoice' && (
@@ -672,25 +705,29 @@ export default function SubscriptionsAdminPage() {
                   </div>
 
                   {/* Row: Filters & Pricing */}
-                  <div className="min-w-0">
-                    <select value={selectedLabelId} onChange={(e) => setSelectedLabelId(e.target.value)} className="w-full border rounded px-2 py-1.5 text-sm text-black">
+                  <div className="min-w-0 sm:col-span-2">
+                    <select
+                      value={selectedLabelId}
+                      onChange={(e) => {
+                        setSelectedLabelId(e.target.value);
+                        setSelectedDapurUnitIds([]);
+                      }}
+                      className="w-full border rounded px-2 py-1.5 text-sm text-black"
+                    >
                       <option value="">Pilih Label</option>
                       {enterpriseLabels.map((label: any) => (
                         <option key={label.id} value={label.id}>{label.name}</option>
                       ))}
                     </select>
                   </div>
-                  <div className="min-w-0">
-                    <select value={roleFilter ?? ''} onChange={(e) => setRoleFilter(e.target.value ? (e.target.value as Role) : undefined)} className="w-full border rounded px-2 py-1.5 text-sm text-black">
-                      <option value="">Semua Role</option>
-                      <option value={Role.INVESTOR}>Investor</option>
-                      <option value={Role.PROJECT_OWNER}>Project Owner</option>
-                      <option value={Role.BUYER}>Buyer</option>
-                      <option value={Role.SUPPLIER}>Seller</option>
-                    </select>
-                  </div>
-                  <div className="min-w-0">
-                    <input value={userSearch} onChange={(e) => { setUserSearch(e.target.value); setUserPage(1); }} className="w-full border rounded px-2 py-1.5 text-sm text-black" placeholder="Cari user (email/nama)" />
+                  <div className="min-w-0 sm:col-span-2">
+                    <input
+                      value={dapurSearch}
+                      onChange={(e) => setDapurSearch(e.target.value)}
+                      disabled={!selectedLabelId}
+                      className="w-full border rounded px-2 py-1.5 text-sm text-black disabled:bg-gray-100"
+                      placeholder={selectedLabelId ? 'Cari nama dapur / lokasi / email pemilik' : 'Pilih label terlebih dahulu'}
+                    />
                   </div>
                   <div className="flex items-center gap-2 min-w-0">
                     <input value={price} onChange={(e) => setPrice(Number(e.target.value))} type="number" className="w-full border rounded px-2 py-1.5 text-sm text-black" placeholder="Price" />
@@ -737,87 +774,107 @@ export default function SubscriptionsAdminPage() {
 
                 <div className="flex items-center justify-between text-sm text-black">
                   <div>
-                    <span className="text-gray-600">Dipilih:</span> <span className="font-medium">{investorsForSubscription.length} users</span>
+                    <span className="text-gray-600">Dipilih:</span>{' '}
+                    <span className="font-medium">{selectedDapurUnitIds.length} unit dapur</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-gray-600">Total</span>
-                    <span className="font-semibold">{(orgTotalMode ? orgTotalAmount : (price * investorsForSubscription.length)).toLocaleString()} {currency}</span>
+                    <span className="font-semibold">
+                      {(orgTotalMode ? orgTotalAmount : price * selectedDapurUnitIds.length).toLocaleString()} {currency}
+                    </span>
                   </div>
                 </div>
 
-                {/* Users list and selection */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="border rounded">
-                    <div className="p-2 border-b text-sm font-medium text-black">Users</div>
+                    <div className="p-2 border-b text-sm font-medium text-black">Unit dapur (LabelDapur)</div>
                     <div className="max-h-60 overflow-auto">
-                      {loadingUsers ? (
-                        <div className="p-2 text-sm text-gray-600">Loading users...</div>
-                      ) : userResults.users.length === 0 ? (
-                        <div className="p-2 text-sm text-gray-600">Tidak ada user</div>
+                      {!selectedLabelId ? (
+                        <div className="p-2 text-sm text-gray-600">Pilih label untuk memuat daftar dapur.</div>
+                      ) : loadingDapurs ? (
+                        <div className="p-2 text-sm text-gray-600">Memuat unit dapur…</div>
+                      ) : filteredDapurRows.length === 0 ? (
+                        <div className="p-2 text-sm text-gray-600">
+                          Tidak ada dapur di label ini. Hubungkan dapur ke label (LabelDapur) terlebih dahulu.
+                        </div>
                       ) : (
                         <table className="min-w-full text-sm">
                           <thead>
                             <tr className="text-left">
-                              <th className="p-2 text-black">Select</th>
-                              <th className="p-2 text-black">User</th>
-                              <th className="p-2 text-black">Role</th>
+                              <th className="p-2 text-black">Pilih</th>
+                              <th className="p-2 text-black">Dapur</th>
+                              <th className="p-2 text-black">Status</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {userResults.users.map((u: any) => {
-                              const checked = investorsForSubscription.includes(u.id);
-                              const already = alreadySubscribedSet.has(u.id);
+                            {filteredDapurRows.map((row) => {
+                              const du = row.dapurUnit;
+                              const id = row.dapurUnitId;
+                              const checked = selectedDapurUnitIds.includes(id);
+                              const already = alreadySubscribedSet.has(id);
                               return (
-                                <tr key={u.id} className="border-t">
+                                <tr key={row.id} className="border-t">
                                   <td className="p-2">
-                                    <input type="checkbox" checked={checked} onChange={(e) => {
-                                      if (e.target.checked) setInvestorsForSubscription(prev => Array.from(new Set([...prev, u.id])));
-                                      else setInvestorsForSubscription(prev => prev.filter(id => id !== u.id));
-                                    }} />
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setSelectedDapurUnitIds((prev) => Array.from(new Set([...prev, id])));
+                                        } else {
+                                          setSelectedDapurUnitIds((prev) => prev.filter((x) => x !== id));
+                                        }
+                                      }}
+                                    />
                                   </td>
                                   <td className="p-2 text-black">
-                                    <div className="font-medium">{u.fullname || u.email}</div>
-                                    {u.fullname && <div className="text-xs text-gray-600">{u.email}</div>}
+                                    <div className="font-medium">{du?.name || id}</div>
+                                    <div className="text-xs text-gray-600">
+                                      {du?.projectOwner?.email || '—'}
+                                      {du?.location ? ` · ${du.location}` : ''}
+                                    </div>
                                   </td>
                                   <td className="p-2">
                                     {already && (
-                                      <span className="inline-block px-2 py-0.5 rounded text-xs bg-green-100 text-green-700 border border-green-200">Subscribed</span>
+                                      <span className="inline-block px-2 py-0.5 rounded text-xs bg-green-100 text-green-700 border border-green-200">
+                                        Subscribed
+                                      </span>
                                     )}
                                   </td>
                                 </tr>
-                              )
+                              );
                             })}
                           </tbody>
                         </table>
                       )}
                     </div>
-                    {/* Simple pagination */}
                     <div className="p-2 flex items-center justify-between text-xs text-gray-600">
-                      <span>Total: {userResults.total}</span>
-                      <div className="space-x-2">
-                        <button disabled={userPage<=1} onClick={() => setUserPage(p => Math.max(1, p-1))} className="px-2 py-1 border rounded disabled:opacity-50">Prev</button>
-                        <button disabled={(userPage*userLimit) >= userResults.total} onClick={() => setUserPage(p => p+1)} className="px-2 py-1 border rounded disabled:opacity-50">Next</button>
-                      </div>
+                      <span>Terhubung ke label: {dapurRows.length}</span>
                     </div>
                   </div>
                   <div className="border rounded">
-                    <div className="p-2 border-b text-sm font-medium text-black">Selected Users ({investorsForSubscription.length})</div>
+                    <div className="p-2 border-b text-sm font-medium text-black">Dipilih ({selectedDapurUnitIds.length})</div>
                     <div className="max-h-60 overflow-auto">
-                      {investorsForSubscription.length === 0 ? (
-                        <div className="p-2 text-sm text-gray-600">Belum ada user dipilih</div>
+                      {selectedDapurUnitIds.length === 0 ? (
+                        <div className="p-2 text-sm text-gray-600">Belum ada unit dapur dipilih</div>
                       ) : (
                         <table className="min-w-full text-sm">
                           <thead>
                             <tr className="text-left">
-                              <th className="p-2 text-black">User ID</th>
+                              <th className="p-2 text-black">ID</th>
+                              <th className="p-2 text-black">Nama</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {investorsForSubscription.map((id) => (
-                              <tr key={id} className="border-t">
-                                <td className="p-2 text-black">{id}</td>
-                              </tr>
-                            ))}
+                            {selectedDapurUnitIds.map((id) => {
+                              const row = dapurRows.find((r) => r.dapurUnitId === id);
+                              return (
+                                <tr key={id} className="border-t">
+                                  <td className="p-2 text-black font-mono text-xs">{id}</td>
+                                  <td className="p-2 text-black">{row?.dapurUnit?.name || '—'}</td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       )}
@@ -1023,7 +1080,7 @@ export default function SubscriptionsAdminPage() {
           <div className="flex flex-wrap items-center gap-2 mb-3">
             <div className="flex items-center border rounded px-2 py-1.5 text-sm text-black">
               <FiSearch className="mr-2 text-gray-500" />
-              <input value={subsSearch} onChange={(e)=>{ setSubsSearch(e.target.value); setSubsPage(1);} } placeholder="Search email, label, plan, status" className="outline-none" />
+              <input value={subsSearch} onChange={(e)=>{ setSubsSearch(e.target.value); setSubsPage(1);} } placeholder="Cari dapur, email pemilik, label, plan, status" className="outline-none" />
             </div>
             <select value={subsPlanFilter} onChange={(e)=>{ setSubsPlanFilter(e.target.value); setSubsPage(1);} } className="border rounded px-2 py-1.5 text-sm text-black">
               <option value="">All Plans</option>
@@ -1042,7 +1099,7 @@ export default function SubscriptionsAdminPage() {
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="text-left">
-                  <th className="p-2 text-black">User</th>
+                  <th className="p-2 text-black">Dapur / Pemilik</th>
                   <th className="p-2 text-black">Plan</th>
                   <th className="p-2 text-black">Status</th>
                   <th className="p-2 text-black">Label</th>
@@ -1057,8 +1114,10 @@ export default function SubscriptionsAdminPage() {
                   pagedSubscriptions.map((s) => (
                     <tr key={s.id} className="border-t">
                       <td className="p-2 text-black">
-                        <div className="font-medium">{s.user?.fullname || s.user?.email}</div>
-                        {s.user?.fullname && <div className="text-xs text-gray-600">{s.user?.email}</div>}
+                        <div className="font-medium">{s.dapurUnit?.name || '—'}</div>
+                        <div className="text-xs text-gray-600">
+                          {s.dapurUnit?.projectOwner?.fullname || s.dapurUnit?.projectOwner?.email || '—'}
+                        </div>
                       </td>
                       <td className="p-2 text-black">
                         {(() => {
@@ -1092,7 +1151,7 @@ export default function SubscriptionsAdminPage() {
                       </td>
                       <td className="p-2 text-black">
                         {(() => {
-                          const name = s.label?.name || s.user?.labelInvestors?.[0]?.label?.name;
+                          const name = s.label?.name;
                           return name
                             ? <span className="inline-block px-2 py-1 rounded text-xs bg-blue-100 text-blue-700">{name}</span>
                             : '-';
@@ -1273,7 +1332,12 @@ export default function SubscriptionsAdminPage() {
             <div className="bg-white rounded-xl max-w-lg w-full shadow-xl" onClick={(e) => e.stopPropagation()}>
               <div className="p-6 border-b text-black text-lg font-semibold">Renew Enterprise Custom</div>
               <div className="p-6 space-y-3">
-                <div className="text-sm text-gray-700">User: <span className="font-medium text-black">{renewTarget.user?.email}</span></div>
+                <div className="text-sm text-gray-700">
+                  Dapur:{' '}
+                  <span className="font-medium text-black">
+                    {renewTarget.dapurUnit?.name || renewTarget.dapurUnitId}
+                  </span>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs text-gray-600 mb-1">Currency</label>

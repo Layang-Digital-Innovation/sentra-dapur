@@ -202,4 +202,15 @@ export class ProduksiController {
   ) {
     return this.produksiService.calculateIngredientNeeds(planId, start, end);
   }
+
+  // ─── KALKULASI HPP ───────────────────────────
+  @Roles(...PRODUKSI_ROLES)
+  @Get('rencana/:planId/hpp')
+  calculateHPP(
+    @Param('planId') planId: string,
+    @Query('start') start?: string,
+    @Query('end') end?: string,
+  ) {
+    return this.produksiService.calculateHPP(planId, start, end);
+  }
 }

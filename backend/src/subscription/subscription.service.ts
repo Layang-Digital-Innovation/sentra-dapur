@@ -13,6 +13,104 @@ export class SubscriptionService {
     private paymentService: PaymentService,
   ) {}
 
+  private async ensureDapursBelongToLabel(labelId: string, dapurUnitIds: string[]) {
+    const links = await this.prisma.labelDapur.findMany({
+      where: { labelId, dapurUnitId: { in: dapurUnitIds } },
+      select: { dapurUnitId: true },
+    });
+    if (links.length !== dapurUnitIds.length) {
+      throw new BadRequestException(
+        'Setiap unit dapur harus sudah terhubung ke label enterprise (LabelDapur).',
+      );
+    }
+  }
+
+  private async propagateSubscriptionToDapurUsers(dapurUnitId: string, subscriptionId: string) {
+    const dapur = await this.prisma.dapurUnit.findUnique({
+      where: { id: dapurUnitId },
+      include: { investors: true },
+    });
+    if (!dapur) return;
+    const ids = new Set<string>();
+    ids.add(dapur.projectOwnerId);
+    if (dapur.adminDapurId) ids.add(dapur.adminDapurId);
+    if (dapur.adminPusatId) ids.add(dapur.adminPusatId);
+    for (const i of dapur.investors) ids.add(i.investorId);
+    await this.prisma.user.updateMany({
+      where: { id: { in: [...ids] } },
+      data: { subscriptionId },
+    });
+  }
+
+  private async clearUsersLinkedToSubscription(subscriptionId: string) {
+    await this.prisma.user.updateMany({
+      where: { subscriptionId },
+      data: { subscriptionId: null },
+    });
+  }
+
+  private async mapLegacyUserIdsToDapurUnitIds(userIds: string[]): Promise<string[]> {
+    const out: string[] = [];
+    for (const uid of userIds) {
+      const d = await this.prisma.dapurUnit.findFirst({
+        where: { projectOwnerId: uid },
+        select: { id: true },
+      });
+      if (d) out.push(d.id);
+    }
+    return out;
+  }
+
+  private async resolvePrimaryDapurUnitIdForUser(userId: string, role: Role): Promise<string | null> {
+    if (role === Role.PROJECT_OWNER) {
+      const d = await this.prisma.dapurUnit.findFirst({
+        where: { projectOwnerId: userId },
+        select: { id: true },
+      });
+      return d?.id ?? null;
+    }
+    if (role === Role.ADMIN_DAPUR) {
+      const d = await this.prisma.dapurUnit.findFirst({
+        where: { adminDapurId: userId },
+        select: { id: true },
+      });
+      return d?.id ?? null;
+    }
+    if (role === Role.ADMIN_PUSAT) {
+      const d = await this.prisma.dapurUnit.findFirst({
+        where: { adminPusatId: userId },
+        select: { id: true },
+      });
+      return d?.id ?? null;
+    }
+    if (role === Role.INVESTOR) {
+      const stake = await this.prisma.dapurInvestor.findFirst({
+        where: { investorId: userId },
+        select: { dapurUnitId: true },
+      });
+      return stake?.dapurUnitId ?? null;
+    }
+    return null;
+  }
+
+  /** Dapur units linked to an enterprise label (for admin bulk subscribe UI). */
+  async getDapurUnitsForEnterpriseLabel(labelId: string) {
+    const label = await (this.prisma as any).enterpriseLabel.findUnique({ where: { id: labelId } });
+    if (!label) throw new NotFoundException('Enterprise label not found');
+    return this.prisma.labelDapur.findMany({
+      where: { labelId },
+      include: {
+        dapurUnit: {
+          include: {
+            projectOwner: { select: { id: true, fullname: true, email: true, role: true } },
+            adminDapur: { select: { id: true, fullname: true, email: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
   /** Delete a payment (SUPER_ADMIN only). Restrict deleting PAID payments. */
   async deletePayment(id: string) {
     const payment = await this.prisma.payment.findUnique({ where: { id } });
@@ -206,12 +304,13 @@ export class SubscriptionService {
           { expiresAt: { lt: now } },
         ],
       },
-      select: { id: true, userId: true, currentPeriodEnd: true, expiresAt: true },
+      select: { id: true, dapurUnitId: true, currentPeriodEnd: true, expiresAt: true },
     });
 
     let updated = 0;
     for (const s of overdue) {
       try {
+        await this.clearUsersLinkedToSubscription(s.id);
         await this.prisma.subscription.update({
           where: { id: s.id },
           data: { status: SubscriptionStatus.EXPIRED },
@@ -248,7 +347,14 @@ export class SubscriptionService {
         ],
       },
       include: {
-        user: { select: { id: true, email: true } },
+        dapurUnit: {
+          select: {
+            id: true,
+            name: true,
+            projectOwnerId: true,
+            projectOwner: { select: { id: true, email: true } },
+          },
+        },
         label: { select: { id: true, name: true, code: true } },
       },
     });
@@ -258,21 +364,29 @@ export class SubscriptionService {
     let userNotifs = 0;
     let adminNotifs = 0;
     for (const s of expiring) {
+      const ownerId = s.dapurUnit?.projectOwnerId;
+      if (!ownerId) continue;
       try {
-        // Notify the user
         await (this.prisma as any).notification.create({
           data: {
-            userId: s.userId,
+            userId: ownerId,
             title: 'Langganan Enterprise akan berakhir besok',
-            message: `Akses Enterprise (${s.label?.name || 'Organisasi'}) akan berakhir dalam 1 hari. Mohon lakukan perpanjangan.`,
+            message: `Akses Enterprise (${s.label?.name || 'Organisasi'}) untuk dapur "${s.dapurUnit?.name || ''}" akan berakhir dalam 1 hari. Mohon lakukan perpanjangan.`,
             type: 'ENTERPRISE_EXPIRY',
             relatedId: s.id,
-            metadata: { labelId: s.label?.id, labelName: s.label?.name, currentPeriodEnd: s.currentPeriodEnd, expiresAt: s.expiresAt } as any,
+            metadata: {
+              labelId: s.label?.id,
+              labelName: s.label?.name,
+              dapurUnitId: s.dapurUnit?.id,
+              dapurUnitName: s.dapurUnit?.name,
+              currentPeriodEnd: s.currentPeriodEnd,
+              expiresAt: s.expiresAt,
+            } as any,
           },
         });
         userNotifs++;
       } catch (e) {
-        this.logger.warn(`Failed to notify user ${s.userId} enterprise expiry: ${e?.message}`);
+        this.logger.warn(`Failed to notify project owner ${ownerId} enterprise expiry: ${e?.message}`);
       }
     }
 
@@ -285,7 +399,17 @@ export class SubscriptionService {
               title: 'Enterprise subscriptions expiring H-1',
               message: `Ada ${expiring.length} subscription Enterprise Custom yang akan berakhir besok.`,
               type: 'ENTERPRISE_EXPIRY_ADMIN',
-              metadata: { items: expiring.map(e => ({ subscriptionId: e.id, userEmail: e.user.email, labelName: e.label?.name, currentPeriodEnd: e.currentPeriodEnd, expiresAt: e.expiresAt })) } as any,
+              metadata: {
+                items: expiring.map((e) => ({
+                  subscriptionId: e.id,
+                  dapurUnitId: e.dapurUnit?.id,
+                  dapurUnitName: e.dapurUnit?.name,
+                  ownerEmail: e.dapurUnit?.projectOwner?.email,
+                  labelName: e.label?.name,
+                  currentPeriodEnd: e.currentPeriodEnd,
+                  expiresAt: e.expiresAt,
+                })),
+              } as any,
             },
           });
           adminNotifs++;
@@ -309,10 +433,11 @@ export class SubscriptionService {
     await this.prisma.payment.update({ where: { id: payment.id }, data: { status: (PaymentStatus as any).PAID ?? 'PAID', paidAt: new Date(), metadata: newMeta } as any });
     await this.activateBulkFromOrgInvoice({
       labelId: meta.labelId,
+      dapurUnitIds: Array.isArray(meta.dapurUnitIds) ? meta.dapurUnitIds : [],
       userIds: Array.isArray(meta.userIds) ? meta.userIds : [],
       pricePerUser: meta.pricePerUser || 0,
       currency: meta.currency || 'IDR',
-      period: meta.period || 'MONTHLY'
+      period: meta.period || 'MONTHLY',
     });
     return { success: true };
   }
@@ -325,11 +450,19 @@ export class SubscriptionService {
     const meta: any = payment.metadata || {};
     if (meta.mode !== 'ORG_INVOICE') throw new BadRequestException('Not an ORG_INVOICE payment');
     await this.prisma.payment.update({ where: { id: payment.id }, data: { status: PaymentStatus.FAILED, failedAt: new Date(), failureReason: reason } });
-    if (expireSubscriptions && Array.isArray(meta.userIds)) {
-      for (const userId of meta.userIds) {
-        const existing = await this.prisma.subscription.findUnique({ where: { userId } });
+    if (expireSubscriptions) {
+      let dapurUnitIds: string[] = Array.isArray(meta.dapurUnitIds) ? meta.dapurUnitIds : [];
+      if (dapurUnitIds.length === 0 && Array.isArray(meta.userIds)) {
+        dapurUnitIds = await this.mapLegacyUserIdsToDapurUnitIds(meta.userIds);
+      }
+      for (const dapurUnitId of dapurUnitIds) {
+        const existing = await this.prisma.subscription.findUnique({ where: { dapurUnitId } });
         if (existing) {
-          await this.prisma.subscription.update({ where: { id: existing.id }, data: { status: SubscriptionStatus.EXPIRED, currentPeriodEnd: new Date() } });
+          await this.clearUsersLinkedToSubscription(existing.id);
+          await this.prisma.subscription.update({
+            where: { id: existing.id },
+            data: { status: SubscriptionStatus.EXPIRED, currentPeriodEnd: new Date() },
+          });
         }
       }
     }
@@ -343,7 +476,7 @@ export class SubscriptionService {
   async createOrgInvoiceForLabel(params: {
     adminUserId: string;
     labelId: string;
-    userIds: string[];
+    dapurUnitIds: string[];
     pricePerUser: number;
     totalAmount?: number;
     currency?: string;
@@ -359,22 +492,44 @@ export class SubscriptionService {
     awaitingApproval?: boolean;
     additionalSeats?: boolean;
   }) {
-    let { adminUserId, labelId, userIds, pricePerUser, totalAmount, currency = 'IDR', period, provider = 'xendit', description,
-      invoiceNumber, referenceNumber, bankName, paidBy, notes, awaitingApproval = false, additionalSeats = false } = params;
+    let {
+      adminUserId,
+      labelId,
+      dapurUnitIds,
+      pricePerUser,
+      totalAmount,
+      currency = 'IDR',
+      period,
+      provider = 'xendit',
+      description,
+      invoiceNumber,
+      referenceNumber,
+      bankName,
+      paidBy,
+      notes,
+      awaitingApproval = false,
+      additionalSeats = false,
+    } = params;
 
     // Force approval workflow for manual provider
     if (provider === 'manual') {
       awaitingApproval = true;
     }
 
-    if (!userIds || userIds.length === 0) throw new BadRequestException('userIds is required');
+    if (!dapurUnitIds || dapurUnitIds.length === 0) {
+      throw new BadRequestException('dapurUnitIds is required');
+    }
+    await this.ensureDapursBelongToLabel(labelId, dapurUnitIds);
     const label = await (this.prisma as any).enterpriseLabel.findUnique({ where: { id: labelId } });
     if (!label) throw new NotFoundException('Enterprise label not found');
 
-    const amountToCharge = typeof totalAmount === 'number' && totalAmount > 0
-      ? totalAmount
-      : (pricePerUser * userIds.length);
-    const desc = description || `Enterprise Custom (${label.name}) ${period} • ${userIds.length} users`;
+    const amountToCharge =
+      typeof totalAmount === 'number' && totalAmount > 0
+        ? totalAmount
+        : pricePerUser * dapurUnitIds.length;
+    const desc =
+      description ||
+      `Enterprise Custom (${label.name}) ${period} • ${dapurUnitIds.length} unit dapur`;
 
     // auto-generate invoice number if not provided
     if (!invoiceNumber) {
@@ -394,7 +549,7 @@ export class SubscriptionService {
       metadata: {
         mode: 'ORG_INVOICE',
         labelId,
-        userIds,
+        dapurUnitIds,
         pricePerUser,
         totalAmount: typeof totalAmount === 'number' ? totalAmount : undefined,
         currency,
@@ -412,24 +567,36 @@ export class SubscriptionService {
   }
 
   /**
-   * Activate multiple users' subscriptions for ENTERPRISE_CUSTOM after org invoice is paid.
+   * Activate ENTERPRISE_CUSTOM per DapurUnit after org invoice is paid.
+   * Supports legacy payments that only stored userIds (project owners).
    */
   async activateBulkFromOrgInvoice(params: {
     labelId: string;
-    userIds: string[];
+    dapurUnitIds?: string[];
+    userIds?: string[];
     pricePerUser: number;
     currency?: string;
     period: 'MONTHLY' | 'YEARLY';
   }) {
-    const { labelId, userIds, pricePerUser, currency = 'IDR', period } = params;
+    let { labelId, pricePerUser, currency = 'IDR', period } = params;
+    let dapurUnitIds = params.dapurUnitIds?.length ? params.dapurUnitIds : [];
+    if (dapurUnitIds.length === 0 && params.userIds?.length) {
+      dapurUnitIds = await this.mapLegacyUserIdsToDapurUnitIds(params.userIds);
+    }
+    if (dapurUnitIds.length === 0) {
+      throw new BadRequestException('No dapur units to activate');
+    }
+    await this.ensureDapursBelongToLabel(labelId, dapurUnitIds);
+
     const now = new Date();
     const periodEnd = this.calculatePeriodEnd(now, period);
     const ENTERPRISE_CUSTOM_PLAN = 'ENTERPRISE_CUSTOM' as SubscriptionPlan;
 
-    for (const userId of userIds) {
-      const existing = await this.prisma.subscription.findUnique({ where: { userId } });
+    for (const dapurUnitId of dapurUnitIds) {
+      const existing = await this.prisma.subscription.findUnique({ where: { dapurUnitId } });
+      let subscription;
       if (existing) {
-        await this.prisma.subscription.update({
+        subscription = await this.prisma.subscription.update({
           where: { id: existing.id },
           data: {
             plan: ENTERPRISE_CUSTOM_PLAN,
@@ -438,29 +605,30 @@ export class SubscriptionService {
             currentPeriodStart: now,
             currentPeriodEnd: periodEnd,
             customPrice: pricePerUser,
-            customCurrency: currency,
+            customCurrency: currency as any,
             labelId,
           } as any,
         });
       } else {
-        await this.prisma.subscription.create({
+        subscription = await this.prisma.subscription.create({
           data: {
-            userId,
+            dapurUnitId,
             plan: ENTERPRISE_CUSTOM_PLAN,
             status: SubscriptionStatus.ACTIVE,
             startedAt: now,
             currentPeriodStart: now,
             currentPeriodEnd: periodEnd,
             customPrice: pricePerUser,
-            customCurrency: currency,
+            customCurrency: currency as any,
             labelId,
           } as any,
         });
       }
+      await this.propagateSubscriptionToDapurUsers(dapurUnitId, subscription.id);
     }
 
-    this.logger.log(`Activated ${userIds.length} subscriptions for label ${labelId} via ORG_INVOICE`);
-    return { labelId, count: userIds.length };
+    this.logger.log(`Activated ${dapurUnitIds.length} dapur subscriptions for label ${labelId} via ORG_INVOICE`);
+    return { labelId, count: dapurUnitIds.length };
   }
 
   /**
@@ -505,16 +673,24 @@ export class SubscriptionService {
     const meta: any = prev.metadata || {};
     if (meta.mode !== 'ORG_INVOICE') throw new BadRequestException('Previous payment is not an ORG_INVOICE');
     const labelId = meta.labelId as string;
-    const userIds = Array.isArray(meta.userIds) ? (meta.userIds as string[]) : [];
-    if (!labelId || userIds.length === 0) throw new BadRequestException('Previous payment missing labelId or userIds');
+    let dapurUnitIds: string[] = Array.isArray(meta.dapurUnitIds) ? (meta.dapurUnitIds as string[]) : [];
+    if (dapurUnitIds.length === 0 && Array.isArray(meta.userIds)) {
+      dapurUnitIds = await this.mapLegacyUserIdsToDapurUnitIds(meta.userIds as string[]);
+    }
+    if (!labelId || dapurUnitIds.length === 0) {
+      throw new BadRequestException('Previous payment missing labelId or dapurUnitIds');
+    }
 
     const label = await (this.prisma as any).enterpriseLabel.findUnique({ where: { id: labelId } });
     if (!label) throw new NotFoundException('Enterprise label not found');
 
-    const amountToCharge = typeof totalAmount === 'number' && totalAmount > 0
-      ? totalAmount
-      : (pricePerUser * userIds.length);
-    const desc = description || `Enterprise Custom (${label.name}) ${period} • Renewal • ${userIds.length} users`;
+    const amountToCharge =
+      typeof totalAmount === 'number' && totalAmount > 0
+        ? totalAmount
+        : pricePerUser * dapurUnitIds.length;
+    const desc =
+      description ||
+      `Enterprise Custom (${label.name}) ${period} • Renewal • ${dapurUnitIds.length} unit dapur`;
 
     const payment = await this.paymentService.createPayment({
       userId: adminUserId,
@@ -527,7 +703,7 @@ export class SubscriptionService {
       metadata: {
         mode: 'ORG_INVOICE',
         labelId,
-        userIds,
+        dapurUnitIds,
         pricePerUser,
         totalAmount: typeof totalAmount === 'number' ? totalAmount : undefined,
         currency,
@@ -545,29 +721,45 @@ export class SubscriptionService {
   }
 
   async getUserSubscription(userId: string) {
-    const subscription = await this.prisma.subscription.findFirst({
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { subscription: true },
+    });
+    if (user?.subscription) {
+      return user.subscription;
+    }
+    return this.prisma.subscription.findFirst({
       where: {
-        userId,
+        dapurUnit: {
+          OR: [
+            { projectOwnerId: userId },
+            { adminDapurId: userId },
+            { adminPusatId: userId },
+            { investors: { some: { investorId: userId } } },
+          ],
+        },
       },
-      orderBy: {
-        startedAt: 'desc',
-      },
-    })
-
-    return subscription
+      orderBy: { startedAt: 'desc' },
+    });
   }
 
-  async createSubscription(userId: string, planId: string, paymentMethod: string) {
-    // Ambil informasi plan dari database/konfigurasi admin (tanpa hardcode)
+  async createSubscription(userId: string, planId: string, paymentMethod: string, role?: Role) {
     const plans = await this.getSubscriptionPlans();
-    const plan = plans.find(p => p.id === planId);
+    const plan = plans.find((p) => p.id === planId);
 
     if (!plan) {
       throw new NotFoundException('Subscription plan not found');
     }
 
-    // Catatan: price/duration tidak ditentukan di sini (diatur oleh admin)
-    // Buat payment dengan amount 0 sebagai placeholder, atau sesuaikan saat integrasi konfigurasi admin
+    const dbUser = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    if (!dbUser) throw new NotFoundException('User not found');
+    const effectiveRole = role ?? dbUser.role;
+
+    const dapurUnitId = await this.resolvePrimaryDapurUnitIdForUser(userId, effectiveRole as Role);
+    if (!dapurUnitId) {
+      throw new BadRequestException('Tidak ada unit dapur terkait akun ini; hubungkan ke dapur terlebih dahulu.');
+    }
+
     const payment = await this.paymentService.createPayment({
       userId,
       amount: 0,
@@ -575,15 +767,28 @@ export class SubscriptionService {
       paymentMethod,
     });
 
-    // Create subscription (status TRIAL default, tanggal akan diatur oleh admin atau saat aktivasi)
-    const subscription = await this.prisma.subscription.create({
-      data: {
-        userId,
-        plan: plan.plan,
-        status: SubscriptionStatus.TRIAL,
-        startedAt: new Date(),
-      },
-    });
+    const existing = await this.prisma.subscription.findUnique({ where: { dapurUnitId } });
+    let subscription;
+    if (existing) {
+      subscription = await this.prisma.subscription.update({
+        where: { id: existing.id },
+        data: {
+          plan: plan.plan,
+          status: SubscriptionStatus.TRIAL,
+          startedAt: new Date(),
+        },
+      });
+    } else {
+      subscription = await this.prisma.subscription.create({
+        data: {
+          dapurUnitId,
+          plan: plan.plan,
+          status: SubscriptionStatus.TRIAL,
+          startedAt: new Date(),
+        },
+      });
+    }
+    await this.propagateSubscriptionToDapurUsers(dapurUnitId, subscription.id);
 
     return {
       subscription,
@@ -616,17 +821,29 @@ export class SubscriptionService {
   async cancelSubscription(subscriptionId: string, userId: string) {
     const subscription = await this.prisma.subscription.findUnique({
       where: { id: subscriptionId },
+      include: { dapurUnit: true },
     });
 
     if (!subscription) {
       throw new NotFoundException('Subscription not found');
     }
 
-    if (subscription.userId !== userId) {
+    const actor = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true, subscriptionId: true },
+    });
+    const isSuperAdmin = actor?.role === Role.SUPER_ADMIN;
+    const du = subscription.dapurUnit;
+    const ownsDapur =
+      du.projectOwnerId === userId || du.adminDapurId === userId || du.adminPusatId === userId;
+    const linked = actor?.subscriptionId === subscriptionId;
+
+    if (!isSuperAdmin && !ownsDapur && !linked) {
       throw new BadRequestException('You do not have permission to cancel this subscription');
     }
 
-    // Cancel subscription
+    await this.clearUsersLinkedToSubscription(subscriptionId);
+
     return this.prisma.subscription.update({
       where: { id: subscriptionId },
       data: {
@@ -691,22 +908,29 @@ export class SubscriptionService {
   async getAllSubscriptions() {
     return this.prisma.subscription.findMany({
       include: {
-        user: {
+        dapurUnit: {
           select: {
             id: true,
-            fullname: true,
-            email: true,
-            role: true,
-            labelInvestors: {
-              include: { label: { select: { id: true, name: true } } }
-            }
-          }
+            name: true,
+            location: true,
+            projectOwner: {
+              select: {
+                id: true,
+                fullname: true,
+                email: true,
+                role: true,
+              },
+            },
+            adminDapur: { select: { id: true, fullname: true, email: true } },
+            labelDapurs: {
+              include: { label: { select: { id: true, name: true } } },
+            },
+          },
         },
-        // expose label information for UI attribution
         label: {
-          select: { id: true, name: true }
+          select: { id: true, name: true },
         } as any,
-      }
+      },
     });
   }
 
@@ -772,9 +996,13 @@ export class SubscriptionService {
     const status = payment.status;
     const currency = payment.currency || 'IDR';
     const amount = payment.amount || 0;
-    const usersCount = Array.isArray(meta.userIds) ? meta.userIds.length : (meta.usersCount || 1);
+    const usersCount = Array.isArray(meta.dapurUnitIds)
+      ? meta.dapurUnitIds.length
+      : Array.isArray(meta.userIds)
+        ? meta.userIds.length
+        : (meta.usersCount || 1);
     const period = meta.period || 'MONTHLY';
-    const planText = `Enterprise Custom ${period}${meta.additionalSeats ? ' - additional seats' : ''} - ${usersCount} users`;
+    const planText = `Enterprise Custom ${period}${meta.additionalSeats ? ' - additional seats' : ''} - ${usersCount} unit dapur`;
     const bankInfoLines = [
       meta.bankName ? `Bank: ${meta.bankName}` : '',
       meta.bankAccountName ? `Account Name: ${meta.bankAccountName}` : '',
@@ -846,7 +1074,7 @@ export class SubscriptionService {
         </thead>
         <tbody>
           <tr>
-            <td class="item">Subscription seats</td>
+            <td class="item">Langganan per unit dapur</td>
             <td class="qty">${usersCount}</td>
             <td class="unit">${fmt((meta.totalAmount && usersCount) ? (meta.totalAmount / usersCount) : (meta.pricePerUser || amount))}</td>
             <td class="total">${fmt(amount || meta.totalAmount || (usersCount * (meta.pricePerUser || 0)))}</td>
@@ -904,9 +1132,13 @@ export class SubscriptionService {
     doc.fontSize(11).fillColor('#666').text('Billed To');
     doc.fillColor('#000').text(orgName);
 
-    const usersCount = Array.isArray(meta.userIds) ? meta.userIds.length : (meta.usersCount || 1);
+    const usersCount = Array.isArray(meta.dapurUnitIds)
+      ? meta.dapurUnitIds.length
+      : Array.isArray(meta.userIds)
+        ? meta.userIds.length
+        : (meta.usersCount || 1);
     const period = meta.period || 'MONTHLY';
-    const planText = `Enterprise Custom ${period}${meta.additionalSeats ? ' - additional seats' : ''} - ${usersCount} users`;
+    const planText = `Enterprise Custom ${period}${meta.additionalSeats ? ' - additional seats' : ''} - ${usersCount} unit dapur`;
     doc.moveDown(0.5);
     doc.fillColor('#666').text('Description');
     doc.fillColor('#000').text(planText);
@@ -933,7 +1165,7 @@ export class SubscriptionService {
     doc.moveDown(0.2); doc.strokeColor('#eee').moveTo(48, doc.y).lineTo(560, doc.y).stroke();
     doc.moveDown(0.4);
     // Data row (numeric cells right-aligned)
-    doc.fillColor('#000').text('Subscription seats', itemX);
+    doc.fillColor('#000').text('Langganan per unit dapur', itemX);
     doc.moveUp().text(String(usersCount), qtyX, undefined as any, { width: qtyW, align: 'right' });
     doc.moveUp().text(fmt(unitPrice), unitX, undefined as any, { width: unitW, align: 'right' });
     doc.moveUp().text(fmt(total), totalX, undefined as any, { width: totalW, align: 'right' });
@@ -1029,30 +1261,34 @@ export class SubscriptionService {
   }
 
   /**
-   * Bulk subscribe investors to ENTERPRISE_CUSTOM plan with custom price and currency.
-   * Optionally auto activate by marking payment as manual paid.
+   * Bulk subscribe Dapur units to ENTERPRISE_CUSTOM (label must already link each unit via LabelDapur).
    */
-  async bulkSubscribeInvestorsForLabel(params: {
+  async bulkSubscribeDapursForLabel(params: {
     labelId: string;
-    userIds: string[];
+    dapurUnitIds: string[];
     price: number;
     currency?: string;
-    autoActivate?: boolean; // if true, mark payment as PAID immediately (manual)
+    autoActivate?: boolean;
     period?: 'MONTHLY' | 'YEARLY';
   }) {
-    const { labelId, userIds, price, currency = 'IDR', autoActivate = true, period = 'MONTHLY' } = params;
+    const { labelId, dapurUnitIds, price, currency = 'IDR', autoActivate = true, period = 'MONTHLY' } = params;
 
     const label = await (this.prisma as any).enterpriseLabel.findUnique({ where: { id: labelId } });
     if (!label) throw new NotFoundException('Enterprise label not found');
+    await this.ensureDapursBelongToLabel(labelId, dapurUnitIds);
 
     const ENTERPRISE_CUSTOM_PLAN = 'ENTERPRISE_CUSTOM' as SubscriptionPlan;
     const now = new Date();
-    const results: Array<{ userId: string; subscriptionId: string; paymentId?: string }> = [];
+    const results: Array<{ dapurUnitId: string; subscriptionId: string; paymentId?: string }> = [];
 
-    for (const userId of userIds) {
-      // Upsert subscription for user
-      const existing = await this.prisma.subscription.findUnique({ where: { userId } });
+    for (const dapurUnitId of dapurUnitIds) {
+      const dapur = await this.prisma.dapurUnit.findUnique({
+        where: { id: dapurUnitId },
+        select: { projectOwnerId: true, name: true },
+      });
+      if (!dapur) continue;
 
+      const existing = await this.prisma.subscription.findUnique({ where: { dapurUnitId } });
       let subscription;
       const periodEnd = this.calculatePeriodEnd(now, period);
 
@@ -1062,64 +1298,62 @@ export class SubscriptionService {
           data: {
             plan: ENTERPRISE_CUSTOM_PLAN,
             status: autoActivate ? SubscriptionStatus.ACTIVE : SubscriptionStatus.PAUSED,
-            startedAt: autoActivate ? now : existing.startedAt,
+            startedAt: autoActivate ? now : existing.startedAt ?? now,
             currentPeriodStart: autoActivate ? now : existing.currentPeriodStart,
             currentPeriodEnd: autoActivate ? periodEnd : existing.currentPeriodEnd,
             customPrice: price,
-            customCurrency: currency,
+            customCurrency: currency as any,
             labelId,
           } as any,
         });
       } else {
         subscription = await this.prisma.subscription.create({
           data: {
-            userId,
+            dapurUnitId,
             plan: ENTERPRISE_CUSTOM_PLAN,
             status: autoActivate ? SubscriptionStatus.ACTIVE : SubscriptionStatus.PAUSED,
-            startedAt: autoActivate ? now : null,
-            currentPeriodStart: autoActivate ? now : null,
-            currentPeriodEnd: autoActivate ? periodEnd : null,
+            startedAt: autoActivate ? now : undefined,
+            currentPeriodStart: autoActivate ? now : undefined,
+            currentPeriodEnd: autoActivate ? periodEnd : undefined,
             customPrice: price,
-            customCurrency: currency,
+            customCurrency: currency as any,
             labelId,
           } as any,
         });
       }
 
-      // Create payment record
+      await this.propagateSubscriptionToDapurUsers(dapurUnitId, subscription.id);
+
       const payment = await this.paymentService.createPayment({
-        userId,
+        userId: dapur.projectOwnerId,
         amount: price,
-        description: `Enterprise Custom (${label.name}) ${period}`,
+        description: `Enterprise Custom (${label.name}) ${period} • ${dapur.name || dapurUnitId}`,
         paymentMethod: autoActivate ? 'manual' : 'xendit',
         currency,
         subscriptionId: subscription.id,
       });
 
-      // If payment is required (not auto-activated), notify user with payment link
       if (!autoActivate) {
         try {
           const paymentLink = (payment as any)?.paymentLink;
           await (this.prisma as any).notification.create({
             data: {
-              userId,
+              userId: dapur.projectOwnerId,
               title: 'Pembayaran diperlukan',
               message: paymentLink
-                ? `Langganan ENTERPRISE_CUSTOM melalui label ${label.name} telah dibuat. Silakan selesaikan pembayaran: ${paymentLink}`
-                : `Langganan ENTERPRISE_CUSTOM melalui label ${label.name} telah dibuat. Silakan selesaikan pembayaran Anda.`,
+                ? `Langganan ENTERPRISE_CUSTOM untuk dapur "${dapur.name}" (label ${label.name}) telah dibuat. Silakan selesaikan pembayaran: ${paymentLink}`
+                : `Langganan ENTERPRISE_CUSTOM untuk dapur "${dapur.name}" telah dibuat. Silakan selesaikan pembayaran Anda.`,
               type: 'PAYMENT_REQUIRED',
               relatedId: subscription.id,
-              metadata: { paymentId: (payment as any)?.id, paymentLink, labelId: labelId, period } as any,
+              metadata: { paymentId: (payment as any)?.id, paymentLink, labelId, period, dapurUnitId } as any,
             },
           });
         } catch (e) {
-          this.logger.warn(`Failed to create payment required notification for user ${userId}: ${e?.message}`);
+          this.logger.warn(`Failed payment notification for dapur ${dapurUnitId}: ${e?.message}`);
         }
       }
 
-      // If autoActivate is false and using gateway, leave subscription pending until webhook updates
       if (autoActivate) {
-        // Ensure subscription is marked active and period dates set
         await this.prisma.subscription.update({
           where: { id: subscription.id },
           data: {
@@ -1127,15 +1361,15 @@ export class SubscriptionService {
             startedAt: now,
             currentPeriodStart: now,
             currentPeriodEnd: periodEnd,
-          }
+          },
         });
       }
 
-      results.push({ userId, subscriptionId: subscription.id, paymentId: (payment as any)?.id });
+      results.push({ dapurUnitId, subscriptionId: subscription.id, paymentId: (payment as any)?.id });
     }
 
-    this.logger.log(`Bulk subscribe ${userIds.length} investors to ENTERPRISE_CUSTOM under label ${labelId}`);
-    return { labelId, count: userIds.length, results };
+    this.logger.log(`Bulk subscribe ${dapurUnitIds.length} dapur units to ENTERPRISE_CUSTOM under label ${labelId}`);
+    return { labelId, count: dapurUnitIds.length, results };
   }
 
   private calculatePeriodEnd(startDate: Date, period: 'MONTHLY' | 'YEARLY') {
@@ -1161,31 +1395,33 @@ export class SubscriptionService {
     return null
   }
 
-  const existing = await this.prisma.subscription.findUnique({ where: { userId } })
+  const dapurUnitId = await this.resolvePrimaryDapurUnitIdForUser(userId, role)
+  if (!dapurUnitId) {
+    this.logger.log(`No dapur unit for user ${userId}; skipping trial`)
+    return null
+  }
+
+  const existing = await this.prisma.subscription.findUnique({ where: { dapurUnitId } })
   const now = new Date()
   const trialEndsAt = new Date()
   trialEndsAt.setDate(trialEndsAt.getDate() + 7)
 
   if (existing) {
-    // Never downgrade an existing non-TRIAL subscription (even if EXPIRED/PAUSED) to TRIAL
     if (existing.plan !== SubscriptionPlan.TRIAL) {
-      this.logger.log(`User ${userId} already has non-TRIAL plan (${existing.plan}) with status ${existing.status}; skipping trial creation`)
+      this.logger.log(`Dapur ${dapurUnitId} already has non-TRIAL plan (${existing.plan}); skipping trial`)
       return existing
     }
-    // If existing TRIAL is still valid, keep as-is
     if (existing.status === SubscriptionStatus.TRIAL && existing.trialEndsAt && existing.trialEndsAt > now) {
-      this.logger.log(`User ${userId} already in valid TRIAL until ${existing.trialEndsAt}`)
+      this.logger.log(`Dapur ${dapurUnitId} already in valid TRIAL until ${existing.trialEndsAt}`)
       return existing
     }
-    // Do not auto-refresh expired TRIALs; keep historical record
-    this.logger.log(`User ${userId} has an existing TRIAL that is no longer valid; not refreshing trial automatically`)
+    this.logger.log(`Dapur ${dapurUnitId} has expired TRIAL; not refreshing automatically`)
     return existing
   }
 
-  // Create new trial subscription
   const created = await this.prisma.subscription.create({
     data: {
-      userId,
+      dapurUnitId,
       plan: SubscriptionPlan.TRIAL,
       status: SubscriptionStatus.TRIAL,
       startedAt: now,
@@ -1193,7 +1429,8 @@ export class SubscriptionService {
       expiresAt: trialEndsAt,
     },
   })
-  this.logger.log(`Created trial subscription for user ${userId} valid until ${trialEndsAt.toISOString()}`)
+  await this.propagateSubscriptionToDapurUsers(dapurUnitId, created.id)
+  this.logger.log(`Created trial subscription for dapur ${dapurUnitId} (user ${userId}) until ${trialEndsAt.toISOString()}`)
   return created
 }
 
@@ -1213,27 +1450,36 @@ export class SubscriptionService {
       where: {
         status: SubscriptionStatus.TRIAL,
         trialEndsAt: { gte: start, lte: end },
-        user: { role: { in: roles as any } },
       },
-      include: { user: { select: { id: true, email: true, role: true } } },
+      select: { id: true, trialEndsAt: true, plan: true },
+    });
+    const subIds = expiring.map((s) => s.id);
+    const affectedUsers = await this.prisma.user.findMany({
+      where: {
+        subscriptionId: { in: subIds },
+        role: { in: roles as any },
+      },
+      select: { id: true, email: true, subscriptionId: true },
     });
 
     let created = 0;
-    for (const s of expiring) {
+    for (const u of affectedUsers) {
+      const sub = expiring.find((s) => s.id === u.subscriptionId);
+      if (!sub) continue;
       try {
         await (this.prisma as any).notification.create({
           data: {
-            userId: s.userId,
+            userId: u.id,
             title: 'Trial akan berakhir besok',
             message: 'Masa trial Anda akan berakhir dalam 1 hari. Upgrade ke plan Gold untuk terus mengakses fitur premium.',
             type: 'TRIAL_EXPIRY',
-            relatedId: s.id,
-            metadata: { trialEndsAt: s.trialEndsAt, plan: s.plan } as any,
+            relatedId: sub.id,
+            metadata: { trialEndsAt: sub.trialEndsAt, plan: sub.plan } as any,
           },
         });
         created++;
       } catch (e) {
-        this.logger.warn(`Failed to create trial expiry notification for user ${s.userId}: ${e?.message}`);
+        this.logger.warn(`Failed to create trial expiry notification for user ${u.id}: ${e?.message}`);
       }
     }
 

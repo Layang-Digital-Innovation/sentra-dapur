@@ -61,6 +61,16 @@ export const rencanaApi = {
       .get(`${BASE}/rencana/${planId}/kalkulasi?${params.toString()}`)
       .then(r => r.data);
   },
+  
+  // Kalkulasi HPP per porsi
+  calculateHPP: (planId: string, start?: string, end?: string) => {
+    const params = new URLSearchParams();
+    if (start) params.set('start', start);
+    if (end) params.set('end', end);
+    return axiosInstance
+      .get(`${BASE}/rencana/${planId}/hpp?${params.toString()}`)
+      .then(r => r.data as HPPCalculationResult[]);
+  },
 };
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -130,4 +140,22 @@ export interface IngredientCalculation {
   grandTotalGrams: number;
   dateRange: { start?: string; end?: string };
   entriesCount: number;
+}
+
+export interface HPPIngredientDetail {
+  ingredientName: string;
+  needed: number;
+  unit: string;
+  unitPrice: number;
+  cost: number;
+}
+
+export interface HPPCalculationResult {
+  date: string;
+  menuName: string;
+  portionTypeName: string;
+  totalCost: number;
+  quantity: number;
+  hppPerPortion: number;
+  ingredients: HPPIngredientDetail[];
 }

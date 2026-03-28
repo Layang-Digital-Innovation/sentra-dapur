@@ -22,7 +22,7 @@ async function bootstrap() {
   });
   
   // Enable validation
-  app.useGlobalPipes(new ValidationPipe());
+  app.useGlobalPipes(new ValidationPipe({ transform: true }));
   
   // Set global prefix
   app.setGlobalPrefix('api');
