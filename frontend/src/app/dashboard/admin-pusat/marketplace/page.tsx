@@ -289,7 +289,17 @@ export default function AdminPusatMarketplacePage() {
   };
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleDownloadTemplate = () => {
+  const handleDownloadTemplate = async () => {
+    let allSuppliers: User[] = [];
+    try {
+      const res = await userService.getAllUsers({ role: Role.SUPPLIER as any, limit: 1000 });
+      allSuppliers = res.users || [];
+    } catch (err) {
+      console.error("Gagal mengambil daftar supplier untuk template:", err);
+      allSuppliers = suppliers;
+    }
+
+    const firstSupplierEmail = (allSuppliers && allSuppliers.length > 0) ? (allSuppliers[0].email || "") : "ganti_dengan_email_supplier_valid";
     const ws = XLSX.utils.json_to_sheet([
       {
         Nama_Produk: "Daging Sapi Segar",
@@ -297,8 +307,8 @@ export default function AdminPusatMarketplacePage() {
         Harga_Satuan_IDR: 125000,
         Satuan: "kg",
         Berat_kg: 1.0,
-        Volume_m3: 0.01,
-        Supplier_Email_opsional: "supplier@gmail.com"
+        Volume_m3: "0.01",
+        Supplier_Email_opsional: firstSupplierEmail
       }
     ]);
 
@@ -313,7 +323,7 @@ export default function AdminPusatMarketplacePage() {
     XLSX.utils.book_append_sheet(wb, wsHelp, "Instruksi");
 
     const wsSuppliers = XLSX.utils.json_to_sheet(
-      suppliers.map((s, index) => ({
+      allSuppliers.map((s, index) => ({
         No: index + 1,
         Nama_Supplier: s.fullName || "Tanpa Nama",
         Email: s.email,
@@ -358,40 +368,93 @@ export default function AdminPusatMarketplacePage() {
         }
 
         let successCount = 0;
-        let failCount = 0;
+        const failedRows: { name: string; reason: string }[] = [];
         
-        const emailToId = new Map(suppliers.map(s => [s.email.toLowerCase(), s.id]));
+        // Fetch fresh list of ALL suppliers to ensure we have the complete mapping
+        let allSuppliers: User[] = [];
+        try {
+          const res = await userService.getAllUsers({ role: Role.SUPPLIER as any, limit: 1000 });
+          allSuppliers = res.users || [];
+        } catch (err) {
+          console.error("Gagal mengambil daftar supplier terbaru:", err);
+          allSuppliers = suppliers; // fallback to current state
+        }
+        
+        if (allSuppliers.length === 0) {
+          alert("Tidak ada supplier yang terdaftar di sistem.\nDaftarkan supplier terlebih dahulu sebelum mengupload katalog produk.");
+          return;
+        }
+
+        const emailToId = new Map(allSuppliers.map(s => [s.email.toLowerCase().trim(), s.id]));
+
+        // Helper function to safely parse number from string (handles comma as decimal)
+        const parseExcelNum = (val: any) => {
+          if (typeof val === 'number') return val;
+          if (!val) return 0;
+          // Replace comma with dot if present
+          const clean = String(val).replace(/,/g, '.').replace(/[^0-9.]/g, '');
+          const res = parseFloat(clean);
+          return isNaN(res) ? 0 : res;
+        };
 
         for (const row of data) {
+          const productName = String(row.Nama_Produk || "Tanpa Nama");
           try {
-            if (!row.Nama_Produk || !row.Harga_Satuan_IDR || !row.Satuan) continue;
-            let finalSellerId = "";
-
-            if (row.Supplier_Email_opsional && typeof row.Supplier_Email_opsional === 'string') {
-               const mapId = emailToId.get(row.Supplier_Email_opsional.toLowerCase());
-               if (mapId) finalSellerId = mapId;
+            if (!row.Nama_Produk || !row.Harga_Satuan_IDR || !row.Satuan) {
+              failedRows.push({ name: productName, reason: "Data tidak lengkap: Nama_Produk, Harga_Satuan_IDR, atau Satuan kosong." });
+              continue;
             }
-            if(!finalSellerId) {
-                throw new Error("Tidak ada target supplier untuk produk " + row.Nama_Produk);
+
+            let finalSellerId = "";
+            const emailRaw = row.Supplier_Email_opsional;
+
+            if (emailRaw && typeof emailRaw === 'string' && emailRaw.trim() !== '') {
+              const mapId = emailToId.get(emailRaw.toLowerCase().trim());
+              if (mapId) {
+                finalSellerId = mapId;
+              } else {
+                // Email diisi tapi tidak cocok dengan supplier manapun
+                const availableEmails = allSuppliers.map(s => s.email).join(", ");
+                failedRows.push({
+                  name: productName,
+                  reason: `Email supplier '${emailRaw.trim()}' tidak ditemukan. Email yang valid: ${availableEmails}`
+                });
+                continue;
+              }
+            } else {
+              // Email kosong — gunakan supplier pertama sebagai default
+              finalSellerId = allSuppliers[0].id;
             }
 
             await tradingService.createProduct({
               sellerId: finalSellerId,
-              name: row.Nama_Produk,
+              name: String(row.Nama_Produk),
               description: row.Deskripsi || "",
-              prices: [{ currency: "IDR", price: Number(row.Harga_Satuan_IDR) }],
-              unit: row.Satuan,
-              weight: Number(row.Berat_kg) || 1.0,
-              volume: (row.Volume_m3 || "0.01").toString()
+              prices: [{ currency: "IDR", price: parseExcelNum(row.Harga_Satuan_IDR) }],
+              unit: String(row.Satuan),
+              weight: parseExcelNum(row.Berat_kg) || 1.0,
+              volume: parseExcelNum(row.Volume_m3 || "0.01").toString()
             });
             successCount++;
-          } catch (err) {
-            failCount++;
-            console.error("Gagal tambah:", row.Nama_Produk, err);
+          } catch (err: any) {
+            const apiMsg = err?.response?.data?.message;
+            const errMsg = Array.isArray(apiMsg) ? apiMsg.join(", ") : (apiMsg || err.message || "Gagal upload ke server.");
+            failedRows.push({ name: productName, reason: errMsg });
           }
         }
-        
-        alert(`Upload selesai!\nBerhasil: ${successCount}\nGagal: ${failCount}`);
+
+        const failCount = failedRows.length;
+        let summaryMsg = `Upload selesai!\nBerhasil: ${successCount}\nGagal: ${failCount}`;
+        if (failedRows.length > 0) {
+          summaryMsg += "\n\nDetail kegagalan:";
+          failedRows.slice(0, 10).forEach((f, i) => {
+            summaryMsg += `\n${i + 1}. "${f.name}": ${f.reason}`;
+          });
+          if (failedRows.length > 10) {
+            summaryMsg += `\n... dan ${failedRows.length - 10} produk lainnya gagal.`;
+          }
+        }
+        alert(summaryMsg);
         fetchProducts();
       } catch (err: any) {
         alert("Gagal membaca file excel: " + err.message);
