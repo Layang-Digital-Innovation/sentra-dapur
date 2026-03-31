@@ -313,7 +313,7 @@ export default function MasterMenuPage() {
     <div className="space-y-6 max-w-6xl mx-auto">
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><FiBook className="text-slate-900" /> Master Menu, BOM & Gizi</h1>
+          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2"><FiBook className="text-slate-900" /> Master Menu, BOM & Gizi</h1>
           <p className="text-gray-500 text-sm mt-1">Konfigurasi struktur resep standar, kandungan gizi, dan Bill of Materials</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -384,10 +384,10 @@ export default function MasterMenuPage() {
                   {/* Info Gizi Bar */}
                   <div className="px-5 py-4 bg-white/60 border-b border-gray-100 flex flex-wrap gap-6 items-center text-sm font-medium">
                     <span className="text-gray-500 uppercase tracking-wider text-[10px] font-bold">Profil Gizi:</span>
-                    <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-orange-400" /> Kalori: <span className="text-gray-900 font-bold">{menu.calories || 0} Kkal</span></span>
-                    <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-blue-400" /> Protein: <span className="text-gray-900 font-bold">{menu.protein || 0} g</span></span>
-                    <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-amber-400" /> Karbo: <span className="text-gray-900 font-bold">{menu.carbs || 0} g</span></span>
-                    <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-red-400" /> Lemak: <span className="text-gray-900 font-bold">{menu.fat || 0} g</span></span>
+                    <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-orange-400" /> Kalori: <span className="text-gray-900 font-bold">{menu.calories || 0} Kkal</span></div>
+                    <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-blue-400" /> Protein: <span className="text-gray-900 font-bold">{menu.protein || 0} g</span></div>
+                    <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-amber-400" /> Karbo: <span className="text-gray-900 font-bold">{menu.carbs || 0} g</span></div>
+                    <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-red-400" /> Lemak: <span className="text-gray-900 font-bold">{menu.fat || 0} g</span></div>
                   </div>
 
                   <div className="p-5">

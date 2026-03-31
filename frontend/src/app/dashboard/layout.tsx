@@ -131,14 +131,8 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <AuthProvider>
-      <CartProvider>
-        {/* <SocketProvider> */}
-          {/* <ChatNotificationProvider> */}
-          <DashboardContent>{children}</DashboardContent>
-          {/* </ChatNotificationProvider> */}
-        {/* </SocketProvider> */}
-      </CartProvider>
-    </AuthProvider>
+    <CartProvider>
+      <DashboardContent>{children}</DashboardContent>
+    </CartProvider>
   );
 }

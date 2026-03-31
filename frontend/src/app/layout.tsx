@@ -33,14 +33,12 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <AuthProvider>
-          {/* <SocketProvider> */}
-            <ProjectNotificationProvider>
-              <LayoutContent>
-                {children}
-              </LayoutContent>
-              <ToastContainer />
-            </ProjectNotificationProvider>
-          {/* </SocketProvider> */}
+          <ProjectNotificationProvider>
+            <LayoutContent>
+              {children}
+            </LayoutContent>
+            <ToastContainer />
+          </ProjectNotificationProvider>
         </AuthProvider>
       </body>
     </html>
