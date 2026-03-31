@@ -1,6 +1,8 @@
 services:
 
   backend:
+    image: ${DOCKER_USERNAME:-layangdigital}/sentradapur-backend:latest
+    pull_policy: always
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -24,6 +26,8 @@ services:
       - "3001"
 
   frontend:
+    image: ${DOCKER_USERNAME:-layangdigital}/sentradapur-frontend:latest
+    pull_policy: always
     build:
       context: ./frontend
       dockerfile: Dockerfile
