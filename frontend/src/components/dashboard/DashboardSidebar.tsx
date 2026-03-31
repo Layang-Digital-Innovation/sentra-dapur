@@ -548,8 +548,8 @@ const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
               }`}
             >
               {/* Logo and Brand */}
-              <div className={`flex flex-shrink-0 items-center mb-6 pt-2 justify-center ${isCollapsed ? 'px-2' : 'px-6'}`}>
-                <Logo className={isCollapsed ? "h-10" : "h-20"} showText={!isCollapsed} />
+              <div className={`flex flex-shrink-0 items-center mb-8 pt-2 ${isCollapsed ? 'justify-center px-1' : 'justify-start px-4'}`}>
+                <Logo className={isCollapsed ? "h-10" : "h-12"} showText={!isCollapsed} />
               </div>
 
               {/* Navigation Links */}
@@ -708,8 +708,8 @@ const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
                 className="flex-1 min-h-0 pt-6 pb-6 overflow-y-auto sidebar-scroll"
               >
               {/* Mobile Logo */}
-              <div className="flex-shrink-0 flex items-center justify-center px-4 mb-6">
-                 <Logo className="h-16" showText={true} />
+              <div className="flex-shrink-0 flex items-center justify-start px-8 mb-8">
+                 <Logo className="h-12" showText={true} />
               </div>
 
               {/* Mobile Navigation */}
