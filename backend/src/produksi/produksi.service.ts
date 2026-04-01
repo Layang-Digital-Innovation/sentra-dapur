@@ -33,6 +33,57 @@ export class ProduksiService {
   }
 
   async deletePortionType(id: string) {
+    const usage = await this.prisma.portionType.findUnique({
+      where: { id },
+      include: {
+        _count: {
+          select: {
+            menuIngredients: true,
+            dailyPortions: true,
+          }
+        },
+        menuIngredients: {
+          select: {
+            menu: {
+              select: { name: true }
+            }
+          },
+          take: 5,
+        },
+        dailyPortions: {
+          select: {
+            dailyEntry: {
+              select: { date: true }
+            }
+          },
+          take: 5,
+        }
+      }
+    });
+
+    if (!usage) throw new NotFoundException('Jenis porsi tidak ditemukan');
+
+    if (usage._count.menuIngredients > 0 || usage._count.dailyPortions > 0) {
+      const menuNames = [...new Set(usage.menuIngredients.map(i => i.menu.name))];
+      const dates = [...new Set(usage.dailyPortions.map(i => i.dailyEntry.date.toISOString().split('T')[0]))];
+      
+      const parts = [];
+      if (usage._count.menuIngredients > 0) {
+        let msg = `${usage._count.menuIngredients} bahan menu`;
+        if (menuNames.length > 0) msg += ` [Menu: ${menuNames.join(', ')}${usage._count.menuIngredients > 5 ? ', ...' : ''}]`;
+        parts.push(msg);
+      }
+      if (usage._count.dailyPortions > 0) {
+        let msg = `${usage._count.dailyPortions} data rencana harian`;
+        if (dates.length > 0) msg += ` [Tanggal: ${dates.join(', ')}${usage._count.dailyPortions > 5 ? ', ...' : ''}]`;
+        parts.push(msg);
+      }
+      
+      throw new BadRequestException(
+        `Tidak dapat menghapus jenis porsi ini karena sedang digunakan di: ${parts.join(' dan ')}.`
+      );
+    }
+
     return this.prisma.portionType.delete({ where: { id } });
   }
 
