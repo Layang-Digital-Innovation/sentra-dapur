@@ -7,7 +7,7 @@ import * as bcrypt from 'bcryptjs';
 export class UsersService {
   constructor(private prisma: PrismaService) {}
 
-  async create(data: { email: string; password?: string; role: Role; kycDocs?: string; fullname?: string; whatsapp?: string }): Promise<User> {
+  async create(data: { email: string; password?: string; role: Role; kycDocs?: string; fullname?: string; whatsapp?: string; noRekening?: string; namaRekening?: string }): Promise<User> {
     const existingUser = await this.prisma.user.findUnique({
       where: { email: data.email },
     });
@@ -27,6 +27,8 @@ export class UsersService {
         role: data.role,
         fullname,
         whatsapp: data.whatsapp || null,
+        noRekening: data.noRekening || null,
+        namaRekening: data.namaRekening || null,
         kycDocs: data.kycDocs || null,
       },
     });
@@ -109,6 +111,9 @@ export class UsersService {
           role: true,
           fullname: true,
           kycDocs: true,
+          whatsapp: true,
+          noRekening: true,
+          namaRekening: true,
           createdAt: true,
           updatedAt: true,
         },
@@ -168,6 +173,9 @@ export class UsersService {
           role: true,
           fullname: true,
           kycDocs: true,
+          whatsapp: true,
+          noRekening: true,
+          namaRekening: true,
           createdAt: true,
           updatedAt: true,
         },
@@ -190,7 +198,7 @@ export class UsersService {
     };
   }
 
-  async update(id: string, data: { email?: string; password?: string; role?: Role; kycDocs?: string; fullname?: string; whatsapp?: string }) {
+  async update(id: string, data: { email?: string; password?: string; role?: Role; kycDocs?: string; fullname?: string; whatsapp?: string; noRekening?: string; namaRekening?: string }) {
     const user = await this.prisma.user.findUnique({
       where: { id },
     });
@@ -229,6 +237,9 @@ export class UsersService {
         email: true,
         role: true,
         kycDocs: true,
+        whatsapp: true,
+        noRekening: true,
+        namaRekening: true,
         createdAt: true,
         updatedAt: true,
       },

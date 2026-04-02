@@ -19,6 +19,8 @@ export interface User {
   fullName?: string | null;
   fullname?: string | null;
   whatsapp?: string | null;
+  noRekening?: string | null;
+  namaRekening?: string | null;
   role: Role;
   kycDocs?: string | null;
   createdAt: string;
@@ -30,6 +32,8 @@ export interface CreateUserRequest {
   fullName?: string;
   fullname?: string;
   whatsapp?: string;
+  noRekening?: string;
+  namaRekening?: string;
   password: string;
   role: Role;
   kycDocs?: string;
@@ -40,6 +44,8 @@ export interface UpdateUserRequest {
   fullName?: string | null;
   fullname?: string | null;
   whatsapp?: string | null;
+  noRekening?: string | null;
+  namaRekening?: string | null;
   role?: Role;
   kycDocs?: string;
   password?: string;

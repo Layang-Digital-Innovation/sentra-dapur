@@ -43,7 +43,7 @@ export default function AdminPusatMarketplacePage() {
   // === Modal state (create / edit supplier) ===
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<User | null>(null);
-  const [form, setForm] = useState({ fullName: "", email: "", password: "", whatsapp: "" });
+  const [form, setForm] = useState({ fullName: "", email: "", password: "", whatsapp: "", noRekening: "", namaRekening: "" });
   const [submitting, setSubmitting] = useState(false);
   const [modalSuccess, setModalSuccess] = useState<string | null>(null);
   const [modalError, setModalError] = useState<string | null>(null);
@@ -116,7 +116,7 @@ export default function AdminPusatMarketplacePage() {
   // === Modal open/close ===
   const openCreate = () => {
     setEditTarget(null);
-    setForm({ fullName: "", email: "", password: "", whatsapp: "" });
+    setForm({ fullName: "", email: "", password: "", whatsapp: "", noRekening: "", namaRekening: "" });
     setModalError(null);
     setModalSuccess(null);
     setIsModalOpen(true);
@@ -124,7 +124,7 @@ export default function AdminPusatMarketplacePage() {
 
   const openEdit = (u: User) => {
     setEditTarget(u);
-    setForm({ fullName: u.fullName || "", email: u.email, password: "", whatsapp: u.whatsapp || "" });
+    setForm({ fullName: u.fullName || "", email: u.email, password: "", whatsapp: u.whatsapp || "", noRekening: u.noRekening || "", namaRekening: u.namaRekening || "" });
     setModalError(null);
     setModalSuccess(null);
     setIsModalOpen(true);
@@ -187,7 +187,7 @@ export default function AdminPusatMarketplacePage() {
     setModalSuccess(null);
     try {
       if (editTarget) {
-        const payload: any = { email: form.email, fullName: form.fullName, whatsapp: form.whatsapp };
+        const payload: any = { email: form.email, fullName: form.fullName, whatsapp: form.whatsapp, noRekening: form.noRekening, namaRekening: form.namaRekening };
         if (form.password) payload.password = form.password;
         await userService.updateUser(editTarget.id, payload);
         setModalSuccess(`Akun supplier ${form.fullName} berhasil diperbarui.`);
@@ -198,10 +198,12 @@ export default function AdminPusatMarketplacePage() {
           email: form.email,
           password: form.password,
           whatsapp: form.whatsapp,
+          noRekening: form.noRekening,
+          namaRekening: form.namaRekening,
           role: Role.SUPPLIER,
         });
         setModalSuccess(`Akun supplier ${form.fullName} berhasil ditambahkan!`);
-        setForm({ fullName: "", email: "", password: "", whatsapp: "" });
+        setForm({ fullName: "", email: "", password: "", whatsapp: "", noRekening: "", namaRekening: "" });
       }
       fetchSuppliers();
       setTimeout(() => {
@@ -785,6 +787,34 @@ export default function AdminPusatMarketplacePage() {
                     />
                   </div>
                   <p className="mt-1 text-xs text-gray-500">Isi dengan digit awalan 8 (contoh: 8123456...)</p>
+                </div>
+
+                {/* Bank Account Info: noRekening and namaRekening */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      No. Rekening
+                    </label>
+                    <input
+                      type="text"
+                      value={form.noRekening}
+                      onChange={e => setForm({ ...form, noRekening: e.target.value })}
+                      placeholder="1234567890"
+                      className="px-4 py-2.5 w-full border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Nama Pemilik Rekening
+                    </label>
+                    <input
+                      type="text"
+                      value={form.namaRekening}
+                      onChange={e => setForm({ ...form, namaRekening: e.target.value })}
+                      placeholder="A/N Rekening"
+                      className="px-4 py-2.5 w-full border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
                 </div>
 
                 {/* Password */}

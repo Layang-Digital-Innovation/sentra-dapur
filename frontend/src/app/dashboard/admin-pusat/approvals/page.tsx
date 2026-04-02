@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { dapurService, DapurUnit } from "@/services/dapur.service";
+import { userService } from "@/services/user.service";
 import { 
   FiCheckCircle, 
   FiXCircle, 
@@ -26,6 +27,7 @@ export default function ApprovalCenterPage() {
   const { user } = useAuth();
   const router = useRouter();
   const [dapurList, setDapurList] = useState<DapurUnit[]>([]);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
   
@@ -35,8 +37,12 @@ export default function ApprovalCenterPage() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const data = await dapurService.getMyDapur();
-      setDapurList(data);
+      const [dapurData, suppData] = await Promise.all([
+        dapurService.getMyDapur(),
+        userService.getSuppliers()
+      ]);
+      setDapurList(dapurData);
+      setSuppliers(suppData);
     } catch (err) {
       console.error(err);
       toast.error("Gagal mengambil data transaksi");
@@ -381,9 +387,43 @@ export default function ApprovalCenterPage() {
                        </div>
                        
                        <div className="grid grid-cols-2 gap-4 mt-4">
+                          {(() => {
+                             const supName = selectedTrx.purchaseOrder.supplierName || selectedTrx.purchaseOrder.items?.[0]?.supplierName;
+                             if (!supName) return null;
+                             
+                             const supplierObj = suppliers.find(s => 
+                               s.fullName?.toLowerCase() === supName.toLowerCase() || 
+                               s.fullname?.toLowerCase() === supName.toLowerCase()
+                             );
+                             
+                             if (supplierObj && (supplierObj.noRekening || supplierObj.namaRekening)) {
+                               return (
+                                 <div className="col-span-2 bg-amber-50 p-4 rounded-xl border border-amber-200">
+                                   <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest mb-2 flex items-center gap-1">
+                                     <FiDollarSign className="w-3 h-3" /> Informasi Pembayaran (Rekening Tujuan)
+                                   </p>
+                                   <div className="flex justify-between items-center">
+                                      <div>
+                                        <p className="text-[10px] text-amber-600/70 font-bold uppercase">No. Rekening</p>
+                                        <p className="text-base font-black text-amber-900 font-mono tracking-widest bg-amber-100/50 px-2 py-0.5 rounded mt-0.5 inline-block">{supplierObj.noRekening || "-"}</p>
+                                      </div>
+                                      <div className="text-right hidden sm:block">
+                                        <FiArrowRight className="text-amber-300 w-5 h-5 mx-4" />
+                                      </div>
+                                      <div className="text-right">
+                                        <p className="text-[10px] text-amber-600/70 font-bold uppercase">Atas Nama</p>
+                                        <p className="text-sm font-bold text-amber-900 mt-1">{supplierObj.namaRekening || "-"}</p>
+                                      </div>
+                                   </div>
+                                 </div>
+                               );
+                             }
+                             return null;
+                           })()}
+
                           <div className="bg-white p-3 rounded-xl border border-indigo-100">
                              <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-0.5">Supplier</p>
-                             <p className="text-sm font-bold text-slate-900 uppercase">{selectedTrx.purchaseOrder.supplierName || "-"}</p>
+                             <p className="text-sm font-bold text-slate-900 uppercase">{selectedTrx.purchaseOrder.supplierName || selectedTrx.purchaseOrder.items?.[0]?.supplierName || "-"}</p>
                           </div>
                           <div className="bg-white p-3 rounded-xl border border-indigo-100">
                              <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-0.5">Tipe PO</p>

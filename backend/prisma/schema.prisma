@@ -30,6 +30,8 @@ model User {
   fullname     String        @default("")
   password     String
   whatsapp     String?
+  noRekening   String?
+  namaRekening String?
   role         Role
   kycDocs      String?
   subscription Subscription? @relation(fields: [subscriptionId], references: [id])

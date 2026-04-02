@@ -122,7 +122,7 @@ export class UsersController {
   @Roles(R.SUPER_ADMIN, R.PROJECT_OWNER, R.ADMIN_PUSAT, R.ADMIN_DAPUR)
   async createUser(
     @Request() req,
-    @Body() data: { email: string; password: string; role: Role; kycDocs?: string; fullName?: string; whatsapp?: string; }
+    @Body() data: { email: string; password: string; role: Role; kycDocs?: string; fullName?: string; whatsapp?: string; noRekening?: string; namaRekening?: string; }
   ) {
     // PROJECT_OWNER can only create ADMIN_PUSAT accounts
     if (req.user.role === R.PROJECT_OWNER) {
@@ -156,7 +156,7 @@ export class UsersController {
   async updateUser(
     @Request() req,
     @Param('id') id: string,
-    @Body() data: Partial<{ email: string; password: string; role: Role; kycDocs?: string; fullName?: string; whatsapp?: string; }>
+    @Body() data: Partial<{ email: string; password: string; role: Role; kycDocs?: string; fullName?: string; whatsapp?: string; noRekening?: string; namaRekening?: string; }>
   ) {
     const target = await this.usersService.findById(id);
     if (req.user.role === R.PROJECT_OWNER) {
