@@ -24,6 +24,43 @@ export class DapurService {
     return dapur;
   }
 
+  private async generateReferenceNo(transactionDate: Date, tx: any = this.prisma): Promise<string> {
+    const year = transactionDate.getFullYear();
+    const month = transactionDate.getMonth() + 1;
+    const monthStr = month.toString().padStart(2, '0');
+    const yearMonthPrefix = `TRX-${year}${monthStr}-`;
+
+    const latestKas = await tx.arusKas.findFirst({
+      where: {
+        referenceNo: {
+          startsWith: yearMonthPrefix
+        }
+      },
+      orderBy: {
+        referenceNo: 'desc'
+      }
+    });
+
+    let nextNumber = 1;
+    if (latestKas && latestKas.referenceNo) {
+      const parts = latestKas.referenceNo.split('-');
+      if (parts.length === 3) {
+        const lastNum = parseInt(parts[2], 10);
+        if (!isNaN(lastNum)) {
+          nextNumber = lastNum + 1;
+        }
+      } else {
+        // Just in case there is a trailing string like (REF)
+        const possibleNum = parseInt(parts[2]?.split(' ')[0], 10);
+        if (!isNaN(possibleNum)) {
+          nextNumber = possibleNum + 1;
+        }
+      }
+    }
+
+    return `${yearMonthPrefix}${nextNumber.toString().padStart(4, '0')}`;
+  }
+
   // ============================================
   // DAPUR UNIT MANAGEMENT (PO / Admin Pusat)
   // ============================================
@@ -130,33 +167,39 @@ export class DapurService {
 
     // General Cash (UMUM) needs approval. Petty Cash (PEMBANTU) is auto-approved.
     const status = data.bookType === CashBookType.UMUM ? ArusKasStatus.PENDING : ArusKasStatus.APPROVED;
+    const txDate = data.transactionDate ? new Date(data.transactionDate) : new Date();
 
-    return this.prisma.arusKas.create({
-      data: {
-        dapurUnitId: dapurId,
-        type: data.type,
-        bookType: data.bookType,
-        amount: data.amount,
-        description: data.description,
-        referenceNo: data.referenceNo,
-        evidenceUrl: data.evidenceUrl,
-        transactionDate: data.transactionDate ? new Date(data.transactionDate) : new Date(),
-        status,
-        reportedById: userId,
-        items: data.items ? {
-          create: data.items.map(i => ({
-            name: i.name,
-            quantity: i.quantity,
-            unit: i.unit,
-            pricePerUnit: i.pricePerUnit,
-            total: i.total || (i.quantity * (i.pricePerUnit || 0))
-          }))
-        } : undefined
-      },
-      include: {
-        items: true,
-        reportedBy: { select: { fullname: true, email: true } }
-      }
+    return this.prisma.$transaction(async (tx) => {
+      const generatedRefNo = await this.generateReferenceNo(txDate, tx);
+      const referenceToSave = data.referenceNo ? `${generatedRefNo} (${data.referenceNo})` : generatedRefNo;
+
+      return tx.arusKas.create({
+        data: {
+          dapurUnitId: dapurId,
+          type: data.type,
+          bookType: data.bookType,
+          amount: data.amount,
+          description: data.description,
+          referenceNo: referenceToSave,
+          evidenceUrl: data.evidenceUrl,
+          transactionDate: txDate,
+          status,
+          reportedById: userId,
+          items: data.items ? {
+            create: data.items.map(i => ({
+              name: i.name,
+              quantity: i.quantity,
+              unit: i.unit,
+              pricePerUnit: i.pricePerUnit,
+              total: i.total || (i.quantity * (i.pricePerUnit || 0))
+            }))
+          } : undefined
+        },
+        include: {
+          items: true,
+          reportedBy: { select: { fullname: true, email: true } }
+        }
+      });
     });
   }
   async getArusKas(dapurId: string, userId: string, role: Role, bookType?: any) {
@@ -309,6 +352,10 @@ export class DapurService {
     if (totalAmount <= 0) throw new BadRequestException('Total amount must be greater than 0');
 
     return await this.prisma.$transaction(async (tx) => {
+      const txDate = evidenceData?.transactionDate ? new Date(evidenceData.transactionDate) : new Date();
+      const generatedRefNo = await this.generateReferenceNo(txDate, tx);
+      const referenceToSave = evidenceData?.referenceNo ? `${generatedRefNo} (${evidenceData.referenceNo})` : generatedRefNo;
+
       // 1. Create ArusKas entry (OUT) - Always PENDING because it's an Invoice Payment
       const kas = await tx.arusKas.create({
         data: {
@@ -317,9 +364,9 @@ export class DapurService {
           bookType: bookType,
           amount: totalAmount,
           description: `Pembayaran Invoice PO #${po.id.slice(0,8)} - ${po.items[0]?.productName || 'Barang'}`,
-          referenceNo: evidenceData?.referenceNo,
+          referenceNo: referenceToSave,
           evidenceUrl: evidenceData?.evidenceUrl,
-          transactionDate: evidenceData?.transactionDate ? new Date(evidenceData.transactionDate) : new Date(),
+          transactionDate: txDate,
           status: ArusKasStatus.PENDING,
           reportedById: adminDapurId
         }
@@ -348,6 +395,7 @@ export class DapurService {
     const tDate = data.transactionDate ? new Date(data.transactionDate) : new Date();
 
     return await this.prisma.$transaction(async (tx) => {
+      const refNoOut = await this.generateReferenceNo(tDate, tx);
       // 1. Record OUT from source book
       await tx.arusKas.create({
         data: {
@@ -356,12 +404,14 @@ export class DapurService {
           bookType: data.fromBook,
           amount: data.amount,
           description: `Transfer ke ${data.toBook === CashBookType.UMUM ? 'Kas Umum' : 'Kas Pembantu'}: ${data.description}`,
+          referenceNo: refNoOut,
           transactionDate: tDate,
           category: 'INTERNAL_TRANSFER',
           reportedById: adminDapurId
         }
       });
 
+      const refNoIn = await this.generateReferenceNo(tDate, tx);
       // 2. Record IN to destination book
       return tx.arusKas.create({
         data: {
@@ -370,6 +420,7 @@ export class DapurService {
           bookType: data.toBook,
           amount: data.amount,
           description: `Terima dari ${data.fromBook === CashBookType.UMUM ? 'Kas Umum' : 'Kas Pembantu'}: ${data.description}`,
+          referenceNo: refNoIn,
           transactionDate: tDate,
           category: 'INTERNAL_TRANSFER',
           reportedById: adminDapurId
