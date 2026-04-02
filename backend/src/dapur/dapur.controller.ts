@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Put, Body, Param, UseGuards, Request, Query } from '@nestjs/common';
+import { Controller, Post, Get, Put, Delete, Body, Param, UseGuards, Request, Query } from '@nestjs/common';
 import { DapurService } from './dapur.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -107,6 +107,15 @@ export class DapurController {
   @Get('po')
   async getAllPurchaseOrders(@Request() req) {
      return this.dapurService.getAllPurchaseOrders(req.user.id, req.user.role);
+  }
+
+  @Roles('ADMIN_PUSAT', 'ADMIN_DAPUR', 'PROJECT_OWNER', 'SUPER_ADMIN', 'ADMIN')
+  @Delete('po/:poId')
+  async deletePurchaseOrder(
+    @Request() req,
+    @Param('poId') poId: string
+  ) {
+    return this.dapurService.deletePurchaseOrder(req.user.id, req.user.role, poId);
   }
 
   @Roles('ADMIN_PUSAT', 'PROJECT_OWNER')

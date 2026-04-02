@@ -160,6 +160,14 @@ class DapurService {
     return this.handleResponse(response);
   }
 
+  async deletePurchaseOrder(poId: string) {
+    const response = await fetch(`${API_BASE_URL}/dapur/po/${poId}`, {
+      method: 'DELETE',
+      headers: await this.getAuthHeaders(),
+    });
+    return this.handleResponse(response);
+  }
+
   async getPurchaseOrders() {
     const response = await fetch(`${API_BASE_URL}/dapur/po`, {
       method: 'GET',

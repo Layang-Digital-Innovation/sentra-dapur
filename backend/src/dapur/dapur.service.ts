@@ -397,6 +397,49 @@ export class DapurService {
      return this.prisma.$transaction(updatePromises);
   }
 
+  async deletePurchaseOrder(reqUserId: string, reqUserRole: Role, poId: string) {
+    const po = await this.prisma.purchaseOrder.findUnique({
+      where: { id: poId },
+      include: { dapurUnit: true }
+    });
+    if (!po) throw new NotFoundException('Purchase Order not found');
+
+    const isOwner = reqUserRole === Role.PROJECT_OWNER && po.dapurUnit?.projectOwnerId === reqUserId;
+    const isPusat = reqUserRole === Role.ADMIN_PUSAT && po.dapurUnit?.adminPusatId === reqUserId;
+    const isDapur = reqUserRole === Role.ADMIN_DAPUR && po.dapurUnit?.adminDapurId === reqUserId;
+    const isSuper = reqUserRole === Role.SUPER_ADMIN || reqUserRole === Role.ADMIN;
+    
+    if (!isOwner && !isPusat && !isDapur && !isSuper) {
+       throw new ForbiddenException('Not authorized to delete this PO');
+    }
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // Delete LoadingGoodItem and LoadingGood if any
+        const loadings = await tx.loadingGood.findMany({ where: { purchaseOrderId: poId } });
+        for (const l of loadings) {
+          await tx.loadingGoodItem.deleteMany({ where: { loadingGoodId: l.id } });
+        }
+        await tx.loadingGood.deleteMany({ where: { purchaseOrderId: poId } });
+
+        // Delete POItems
+        await tx.pOItem.deleteMany({ where: { purchaseOrderId: poId } });
+
+        // Delete related Cashbacks just in case
+        await tx.dapurCashback.deleteMany({ where: { purchaseOrderId: poId } });
+
+        // Unlink Arus Kas if needed, actually if PO has an arusKasId, let's just delete the ArusKas? 
+        // Or keep ArusKas and set its PO reference to null (but ArusKas has no poId, PO has arusKasId)
+        // Since PurchaseOrder depends on ArusKas, deleting PurchaseOrder is fine, ArusKas stays. Wait, ArusKas model has `purchaseOrder PurchaseOrder? @relation("ArusKasPO")` meaning the relation is stored on PurchaseOrder. Deleting PurchaseOrder does not delete ArusKas.
+
+        // Delete PO
+        return await tx.purchaseOrder.delete({ where: { id: poId } });
+      });
+    } catch(err: any) {
+      throw new BadRequestException('Gagal menghapus PO. Pastikan tidak ada data sensitif yang terikat.');
+    }
+  }
+
   async approvePO(adminPusatId: string, poId: string, statuses: POStatus) {
     return this.prisma.purchaseOrder.update({
       where: { id: poId },

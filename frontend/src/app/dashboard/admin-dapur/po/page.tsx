@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { FiShoppingBag, FiCheckCircle, FiXCircle, FiClock, FiEye, FiSearch, FiCalendar, FiSave, FiSend, FiFileText, FiMessageCircle, FiImage, FiPlus } from "react-icons/fi";
+import { FiShoppingBag, FiCheckCircle, FiXCircle, FiClock, FiEye, FiSearch, FiCalendar, FiSave, FiSend, FiFileText, FiMessageCircle, FiImage, FiPlus, FiTrash2 } from "react-icons/fi";
 import { dapurService } from "@/services/dapur.service";
 import { userService } from "@/services/user.service";
 import { tradingService } from "@/services/trading.service";
@@ -109,6 +109,20 @@ export default function AdminDapurPOPage() {
       alert("Gagal menyimpan perubahan: " + err.message);
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleDeletePO = async (poId: string) => {
+    if (!confirm("Apakah Anda yakin ingin menghapus Purchase Order ini? Data yang terhapus tidak dapat dikembalikan.")) return;
+    try {
+      await dapurService.deletePurchaseOrder(poId);
+      alert("Purchase Order berhasil dihapus.");
+      await fetchPOs();
+      if (selectedPO && selectedPO.id === poId) {
+        closeModal();
+      }
+    } catch (err: any) {
+      alert(err.message || "Gagal menghapus Purchase Order");
     }
   };
 
@@ -491,12 +505,21 @@ export default function AdminDapurPOPage() {
                          {getStatusBadge(po.status)}
                       </td>
                       <td className="p-4 text-center">
-                         <button 
-                            onClick={() => openView(po)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition-colors"
-                         >
-                           <FiEye /> Detail {po.status === "PENDING" && "& Edit"}
-                         </button>
+                        <div className="flex justify-center gap-2 items-center">
+                           <button 
+                              onClick={() => openView(po)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition-colors"
+                           >
+                             <FiEye /> Detail {po.status === "PENDING" && "& Edit"}
+                           </button>
+                           <button 
+                              onClick={() => handleDeletePO(po.id)}
+                              className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors border border-red-100"
+                              title="Hapus PO"
+                           >
+                             <FiTrash2 className="w-4 h-4" />
+                           </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
