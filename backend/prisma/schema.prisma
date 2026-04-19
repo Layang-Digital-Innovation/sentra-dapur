@@ -233,6 +233,25 @@ model Product {
 
   // PO relation
   poItems POItem[]
+
+  // BOM Conversion relation
+  bomConversions ProductBomConversion[]
+}
+
+// BOM Conversion: konversi satuan katalog ke satuan produksi
+model ProductBomConversion {
+  id               String   @id @default(uuid())
+  product          Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId        String
+  productionUnit   String   // satuan produksi, e.g. "gram", "ml", "liter"
+  conversionFactor Float    // jumlah satuan produksi per 1 satuan katalog
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([productId, productionUnit])
+  @@index([productId])
+  @@index([productionUnit])
 }
 
 // NEW: Price per currency for products

@@ -10,6 +10,7 @@ import * as XLSX from "xlsx";
 import { tradingService } from "@/services/trading.service";
 import { userService } from "@/services/user.service";
 import { Role, User } from "@/types/user.types";
+import BomConversionSection from "@/components/BomConversionSection";
 
 interface Product {
   id: string;
@@ -23,6 +24,7 @@ interface Product {
   volume: string;
   seller?: { id?: string; fullname: string; email: string; companyName?: string };
   images?: Array<{ url: string; isCover: boolean }>;
+  bomConversions?: Array<{ id: string; productionUnit: string; conversionFactor: number }>;
 }
 
 type ViewMode = "catalog" | "suppliers";
@@ -54,6 +56,10 @@ export default function AdminPusatMarketplacePage() {
   const [targetSeller, setTargetSeller] = useState<User | null>(null);
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
   const [productForm, setProductForm] = useState({ name: "", description: "", price: "", unit: "kg", weight: "1", volume: "0.01" });
+
+  // === BOM Conversions state ===
+  const [bomConversions, setBomConversions] = useState<Array<{ productionUnit: string; conversionFactor: string }>>([]);
+  const [bomErrors, setBomErrors] = useState<Array<{ productionUnit?: string; conversionFactor?: string }>>([]);
 
   // === Fetch products ===
   const fetchProducts = async () => {
@@ -141,6 +147,8 @@ export default function AdminPusatMarketplacePage() {
     setTargetSeller(s);
     setSelectedSupplierId("");
     setProductForm({ name: "", description: "", price: "", unit: "kg", weight: "1", volume: "0.01" });
+    setBomConversions([]);
+    setBomErrors([]);
     setModalError(null);
     setModalSuccess(null);
     setIsProductModalOpen(true);
@@ -167,6 +175,10 @@ export default function AdminPusatMarketplacePage() {
       weight: String(p.weight ?? "1"),
       volume: p.volume || "0.01",
     });
+    // Load existing BOM conversions
+    const existing = Array.isArray(p.bomConversions) ? p.bomConversions : [];
+    setBomConversions(existing.map(b => ({ productionUnit: b.productionUnit, conversionFactor: String(b.conversionFactor) })));
+    setBomErrors(existing.map(() => ({})));
     setModalError(null);
     setModalSuccess(null);
     setIsProductModalOpen(true);
@@ -176,7 +188,37 @@ export default function AdminPusatMarketplacePage() {
     setIsProductModalOpen(false);
     setEditingProduct(null);
     setTargetSeller(null);
+    setBomConversions([]);
+    setBomErrors([]);
     setModalError(null);
+  };
+
+  // === BOM Conversion handlers ===
+  const addBomRow = () => {
+    setBomConversions(prev => [...prev, { productionUnit: '', conversionFactor: '' }]);
+    setBomErrors(prev => [...prev, {}]);
+  };
+
+  const updateBomRow = (index: number, field: 'productionUnit' | 'conversionFactor', value: string) => {
+    setBomConversions(prev => prev.map((row, i) => i === index ? { ...row, [field]: value } : row));
+    setBomErrors(prev => prev.map((err, i) => i === index ? { ...err, [field]: undefined } : err));
+  };
+
+  const removeBomRow = (index: number) => {
+    setBomConversions(prev => prev.filter((_, i) => i !== index));
+    setBomErrors(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const validateBomConversions = (): boolean => {
+    const newErrors = bomConversions.map(row => {
+      const err: { productionUnit?: string; conversionFactor?: string } = {};
+      if (!row.productionUnit.trim()) err.productionUnit = 'Satuan produksi tidak boleh kosong';
+      const factor = parseFloat(row.conversionFactor);
+      if (!row.conversionFactor || isNaN(factor) || factor <= 0) err.conversionFactor = 'Faktor konversi harus lebih besar dari 0';
+      return err;
+    });
+    setBomErrors(newErrors);
+    return newErrors.every(e => !e.productionUnit && !e.conversionFactor);
   };
 
   // === Submit create / edit ===
@@ -219,6 +261,13 @@ export default function AdminPusatMarketplacePage() {
 
   const handleProductSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validateBomConversions()) return;
+
+    const bomPayload = bomConversions.map(b => ({
+      productionUnit: b.productionUnit.trim(),
+      conversionFactor: parseFloat(b.conversionFactor),
+    }));
+
     if (editingProduct) {
       setSubmitting(true);
       setModalError(null);
@@ -231,12 +280,11 @@ export default function AdminPusatMarketplacePage() {
           unit: productForm.unit,
           weight: Number(productForm.weight),
           volume: productForm.volume,
+          bomConversions: bomPayload,
         });
         setModalSuccess("Perubahan produk berhasil disimpan.");
         fetchProducts();
-        setTimeout(() => {
-          closeProductModal();
-        }, 1200);
+        setTimeout(() => { closeProductModal(); }, 1200);
       } catch (err: any) {
         const msg = err?.response?.data?.message;
         setModalError(Array.isArray(msg) ? msg.join(", ") : (msg || err.message || "Gagal menyimpan produk."));
@@ -264,13 +312,12 @@ export default function AdminPusatMarketplacePage() {
         unit: productForm.unit,
         weight: Number(productForm.weight),
         volume: productForm.volume,
+        bomConversions: bomPayload.length ? bomPayload : undefined,
       });
       const finalSellerName = targetSeller ? (targetSeller.fullName || targetSeller.email) : (suppliers.find(s => s.id === finalSellerId)?.fullName || "Supplier");
       setModalSuccess(`Produk berhasil ditambahkan ke katalog ${finalSellerName}!`);
       fetchProducts();
-      setTimeout(() => {
-        closeProductModal();
-      }, 1500);
+      setTimeout(() => { closeProductModal(); }, 1500);
     } catch (err: any) {
       const msg = err?.response?.data?.message;
       setModalError(Array.isArray(msg) ? msg.join(", ") : (msg || err.message || "Gagal menyimpan produk."));
@@ -957,6 +1004,16 @@ export default function AdminPusatMarketplacePage() {
                     <input type="text" required value={productForm.volume} onChange={e => setProductForm({ ...productForm, volume: e.target.value })} placeholder="0.01" className="w-full border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 px-3 py-2" />
                   </div>
                 </div>
+
+                {/* BOM Conversion Section */}
+                <BomConversionSection
+                  catalogUnit={productForm.unit}
+                  conversions={bomConversions}
+                  errors={bomErrors}
+                  onAdd={addBomRow}
+                  onChange={updateBomRow}
+                  onRemove={removeBomRow}
+                />
 
                 <div className="pt-4 flex items-center justify-end gap-3 border-t mt-4">
                   <button type="button" onClick={closeProductModal} className="px-4 py-2 text-sm font-medium text-slate-700 hover:text-slate-900 transition">Batal</button>

@@ -12,11 +12,11 @@ export const tradingService = {
     const { data } = await axiosInstance.get(`/trading/products/${id}`);
     return data as any;
   },
-  async createProduct(payload: { sellerId?: string; name: string; description: string; prices: Array<{ currency: 'IDR' | 'USD'; price: number }>; unit: string; weight: number; volume: string; }) {
+  async createProduct(payload: { sellerId?: string; name: string; description: string; prices: Array<{ currency: 'IDR' | 'USD'; price: number }>; unit: string; weight: number; volume: string; bomConversions?: Array<{ productionUnit: string; conversionFactor: number }>; }) {
     const { data } = await axiosInstance.post('/trading/products', payload);
     return data as any;
   },
-  async updateProduct(id: string, payload: Partial<{ name: string; description: string; prices: Array<{ currency: 'IDR' | 'USD'; price: number }>; unit: string; weight: number; volume: string; }>) {
+  async updateProduct(id: string, payload: Partial<{ name: string; description: string; prices: Array<{ currency: 'IDR' | 'USD'; price: number }>; unit: string; weight: number; volume: string; bomConversions: Array<{ productionUnit: string; conversionFactor: number }> | null; }>) {
     const { data } = await axiosInstance.put(`/trading/products/${id}`, payload);
     return data as any;
   },
@@ -186,6 +186,12 @@ export const tradingService = {
   async getSellerAnalytics() {
     const { data } = await axiosInstance.get('/trading/seller/analytics');
     return data as { totalProducts: number; totalOrders: number; totalRevenue: number; pendingShipments: number; recentOrders: any[]; topProducts: { id: string; name: string; sold: number; revenue: number }[] };
+  },
+
+  // BOM Conversions
+  async getBomConversionsByUnit(productionUnit: string) {
+    const { data } = await axiosInstance.get(`/trading/bom-conversions?productionUnit=${encodeURIComponent(productionUnit)}`);
+    return data as Array<{ id: string; productId: string; productionUnit: string; conversionFactor: number; product: any }>;
   },
 
   // Product images attach

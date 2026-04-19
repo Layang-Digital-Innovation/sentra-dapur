@@ -7,6 +7,7 @@ import RoleGuard from "@/components/auth/RoleGuard";
 import { Role } from "@/types/user.types";
 import { tradingService } from "@/services/trading.service";
 import { uploadService } from "@/services/upload.service";
+import BomConversionSection from "@/components/BomConversionSection";
 
 export default function EditProductPage() {
   const router = useRouter();
@@ -36,6 +37,10 @@ export default function EditProductPage() {
   const [dragActiveCover, setDragActiveCover] = useState(false);
   const [dragActivePreviews, setDragActivePreviews] = useState(false);
 
+  // BOM Conversions state
+  const [bomConversions, setBomConversions] = useState<Array<{ productionUnit: string; conversionFactor: string }>>([]);
+  const [bomErrors, setBomErrors] = useState<Array<{ productionUnit?: string; conversionFactor?: string }>>([]);
+
   useEffect(() => {
     const load = async () => {
       if (!id) return;
@@ -58,6 +63,10 @@ export default function EditProductPage() {
         const previews = images.filter((img: any) => !img.isCover);
         setCoverImage(cover ? { url: cover.url, filename: cover.filename, originalName: cover.originalName, size: cover.size, mimetype: cover.mimeType } : null);
         setPreviewImages(previews.map((im: any) => ({ url: im.url, filename: im.filename, originalName: im.originalName, size: im.size, mimetype: im.mimeType })));
+        // Load existing BOM conversions
+        const existingBom = Array.isArray(p?.bomConversions) ? p.bomConversions : [];
+        setBomConversions(existingBom.map((b: any) => ({ productionUnit: b.productionUnit, conversionFactor: String(b.conversionFactor) })));
+        setBomErrors(existingBom.map(() => ({})));
       } catch (e: any) {
         setError(e?.response?.data?.message || "Failed to load product");
       } finally {
@@ -109,6 +118,34 @@ export default function EditProductPage() {
   const removeCover = () => setCoverImage(null);
   const removePreviewAt = (idx: number) => setPreviewImages((prev) => prev.filter((_, i) => i !== idx));
 
+  // BOM Conversion handlers
+  const addBomRow = () => {
+    setBomConversions((prev) => [...prev, { productionUnit: '', conversionFactor: '' }]);
+    setBomErrors((prev) => [...prev, {}]);
+  };
+
+  const updateBomRow = (index: number, field: 'productionUnit' | 'conversionFactor', value: string) => {
+    setBomConversions((prev) => prev.map((row, i) => i === index ? { ...row, [field]: value } : row));
+    setBomErrors((prev) => prev.map((err, i) => i === index ? { ...err, [field]: undefined } : err));
+  };
+
+  const removeBomRow = (index: number) => {
+    setBomConversions((prev) => prev.filter((_, i) => i !== index));
+    setBomErrors((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const validateBomConversions = (): boolean => {
+    const newErrors = bomConversions.map((row) => {
+      const err: { productionUnit?: string; conversionFactor?: string } = {};
+      if (!row.productionUnit.trim()) err.productionUnit = 'Satuan produksi tidak boleh kosong';
+      const factor = parseFloat(row.conversionFactor);
+      if (!row.conversionFactor || isNaN(factor) || factor <= 0) err.conversionFactor = 'Faktor konversi harus lebih besar dari 0';
+      return err;
+    });
+    setBomErrors(newErrors);
+    return newErrors.every((e) => !e.productionUnit && !e.conversionFactor);
+  };
+
   const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>, target: 'cover' | 'previews') => {
     e.preventDefault();
     e.stopPropagation();
@@ -134,6 +171,7 @@ export default function EditProductPage() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!id) return;
+    if (!validateBomConversions()) return;
     setSaving(true);
     setError(null);
     setSuccess(null);
@@ -141,6 +179,10 @@ export default function EditProductPage() {
       const prices: Array<{ currency: 'IDR'|'USD'; price: number }> = [];
       if (form.priceIDR && Number(form.priceIDR) > 0) prices.push({ currency: 'IDR', price: Number(form.priceIDR) });
       if (form.priceUSD && Number(form.priceUSD) > 0) prices.push({ currency: 'USD', price: Number(form.priceUSD) });
+      const bomPayload = bomConversions.map((b) => ({
+        productionUnit: b.productionUnit.trim(),
+        conversionFactor: parseFloat(b.conversionFactor),
+      }));
       await tradingService.updateProduct(id, {
         name: form.name,
         description: form.description,
@@ -148,6 +190,7 @@ export default function EditProductPage() {
         prices,
         weight: Number(form.weight),
         volume: form.volume,
+        bomConversions: bomPayload,
       });
       // Attach images if selected
       const coverPayload = coverImage ? {
@@ -350,6 +393,16 @@ export default function EditProductPage() {
                   )}
                 </div>
               </div>
+
+              {/* BOM Conversion Section */}
+              <BomConversionSection
+                catalogUnit={form.unit}
+                conversions={bomConversions}
+                errors={bomErrors}
+                onAdd={addBomRow}
+                onChange={updateBomRow}
+                onRemove={removeBomRow}
+              />
 
               <div className="pt-2">
                 <button

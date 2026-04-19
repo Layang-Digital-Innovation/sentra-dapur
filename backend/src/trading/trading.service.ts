@@ -6,6 +6,18 @@ import { OrderStatus, ShipmentMethod, ShipmentStatus, ProductStatus } from '@pri
 export class TradingService {
   constructor(private prisma: PrismaService) {}
 
+  // ─── BOM Conversion helpers ────────────────────────────────────────────────
+  private validateBomConversions(bomConversions: Array<{ productionUnit: string; conversionFactor: number }>) {
+    for (const bom of bomConversions) {
+      if (!bom.productionUnit || !bom.productionUnit.trim()) {
+        throw new BadRequestException('productionUnit tidak boleh kosong');
+      }
+      if (bom.conversionFactor <= 0) {
+        throw new BadRequestException('conversionFactor harus lebih besar dari 0');
+      }
+    }
+  }
+
   // Product Management
   async createProduct(sellerId: string, data: {
     name: string;
@@ -15,7 +27,12 @@ export class TradingService {
     weight: number;
     volume: string;
     status?: ProductStatus;
+    bomConversions?: Array<{ productionUnit: string; conversionFactor: number }>;
   }) {
+    if (data.bomConversions?.length) {
+      this.validateBomConversions(data.bomConversions);
+    }
+
     return this.prisma.product.create({
       data: {
         name: data.name,
@@ -28,8 +45,16 @@ export class TradingService {
         prices: {
           create: data.prices.map(p => ({ currency: p.currency as any, price: p.price })),
         },
+        ...(data.bomConversions?.length ? {
+          bomConversions: {
+            create: data.bomConversions.map(b => ({
+              productionUnit: b.productionUnit.trim(),
+              conversionFactor: b.conversionFactor,
+            })),
+          },
+        } : {}),
       },
-      include: { prices: true },
+      include: { prices: true, bomConversions: true },
     });
   }
 
@@ -64,6 +89,7 @@ export class TradingService {
         },
         images: true,
         prices: true,
+        bomConversions: true,
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -76,6 +102,7 @@ export class TradingService {
         seller: { select: { id: true, email: true, fullname: true, SellerProfile: true } },
         images: true,
         prices: true,
+        bomConversions: true,
       },
     });
 
@@ -95,13 +122,21 @@ export class TradingService {
       unit: string;
       weight: number;
       volume: string;
+      bomConversions: Array<{ productionUnit: string; conversionFactor: number }> | null;
     }>,
   ) {
-    const { prices, ...rest } = data as any;
+    const { prices, bomConversions, ...rest } = data as any;
+
+    // Validate bomConversions if provided
+    if (Array.isArray(bomConversions) && bomConversions.length) {
+      this.validateBomConversions(bomConversions);
+    }
+
     await this.prisma.product.update({
       where: { id },
       data: rest,
     });
+
     if (Array.isArray(prices)) {
       await this.prisma.productPrice.deleteMany({ where: { productId: id } });
       if (prices.length) {
@@ -111,7 +146,23 @@ export class TradingService {
         });
       }
     }
-    return this.prisma.product.findUnique({ where: { id }, include: { prices: true } });
+
+    // Replace strategy: if bomConversions is an array (including []), replace all; if undefined, keep existing
+    if (Array.isArray(bomConversions)) {
+      await this.prisma.productBomConversion.deleteMany({ where: { productId: id } });
+      if (bomConversions.length) {
+        await this.prisma.productBomConversion.createMany({
+          data: bomConversions.map((b: any) => ({
+            productId: id,
+            productionUnit: b.productionUnit.trim(),
+            conversionFactor: b.conversionFactor,
+          })),
+          skipDuplicates: true,
+        });
+      }
+    }
+
+    return this.prisma.product.findUnique({ where: { id }, include: { prices: true, bomConversions: true } });
   }
 
   async updateProduct(id: string, sellerId: string, data: Partial<{
@@ -121,6 +172,7 @@ export class TradingService {
     unit: string;
     weight: number;
     volume: string;
+    bomConversions: Array<{ productionUnit: string; conversionFactor: number }> | null;
   }>) {
     const product = await this.prisma.product.findUnique({
       where: { id },
@@ -145,6 +197,7 @@ export class TradingService {
     unit: string;
     weight: number;
     volume: string;
+    bomConversions: Array<{ productionUnit: string; conversionFactor: number }> | null;
   }>) {
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) {
@@ -174,6 +227,7 @@ export class TradingService {
   async getSellerProducts(sellerId: string) {
     return this.prisma.product.findMany({
       where: { sellerId },
+      include: { prices: true, bomConversions: true },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -184,6 +238,7 @@ export class TradingService {
         seller: { select: { id: true, email: true, fullname: true } },
         images: true,
         prices: true,
+        bomConversions: true,
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -421,6 +476,18 @@ export class TradingService {
     return this.prisma.shipment.update({
       where: { id },
       data: { status },
+    });
+  }
+
+  // BOM Conversions: query by productionUnit (for produksi module)
+  async getBomConversionsByUnit(productionUnit: string) {
+    return this.prisma.productBomConversion.findMany({
+      where: { productionUnit },
+      include: {
+        product: {
+          select: { id: true, name: true, unit: true, status: true, prices: true },
+        },
+      },
     });
   }
 

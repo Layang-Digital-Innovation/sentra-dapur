@@ -6,6 +6,7 @@ import { Role } from '@/types/user.types';
 import { tradingService } from '@/services/trading.service';
 import { uploadService } from '@/services/upload.service';
 import RichTextEditor from '@/components/RichTextEditor';
+import BomConversionSection from '@/components/BomConversionSection';
 import { useRouter } from 'next/navigation';
 
 export default function CreateProductPage() {
@@ -31,6 +32,10 @@ export default function CreateProductPage() {
   const [dragActivePreviews, setDragActivePreviews] = useState(false);
   const coverInputRef = useRef<HTMLInputElement | null>(null);
   const previewsInputRef = useRef<HTMLInputElement | null>(null);
+
+  // BOM Conversions state
+  const [bomConversions, setBomConversions] = useState<Array<{ productionUnit: string; conversionFactor: string }>>([]);
+  const [bomErrors, setBomErrors] = useState<Array<{ productionUnit?: string; conversionFactor?: string }>>([]);
 
   const disableSubmit = useMemo(() => {
     const hasAnyPrice = (form.priceIDR && Number(form.priceIDR) > 0) || (form.priceUSD && Number(form.priceUSD) > 0);
@@ -109,8 +114,37 @@ export default function CreateProductPage() {
   const removeCover = () => setCoverImage(null);
   const removePreview = (filename: string) => setPreviewImages((prev) => prev.filter((i) => i.filename !== filename));
 
+  // BOM Conversion handlers
+  const addBomRow = () => {
+    setBomConversions((prev) => [...prev, { productionUnit: '', conversionFactor: '' }]);
+    setBomErrors((prev) => [...prev, {}]);
+  };
+
+  const updateBomRow = (index: number, field: 'productionUnit' | 'conversionFactor', value: string) => {
+    setBomConversions((prev) => prev.map((row, i) => i === index ? { ...row, [field]: value } : row));
+    setBomErrors((prev) => prev.map((err, i) => i === index ? { ...err, [field]: undefined } : err));
+  };
+
+  const removeBomRow = (index: number) => {
+    setBomConversions((prev) => prev.filter((_, i) => i !== index));
+    setBomErrors((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const validateBomConversions = (): boolean => {
+    const newErrors = bomConversions.map((row) => {
+      const err: { productionUnit?: string; conversionFactor?: string } = {};
+      if (!row.productionUnit.trim()) err.productionUnit = 'Satuan produksi tidak boleh kosong';
+      const factor = parseFloat(row.conversionFactor);
+      if (!row.conversionFactor || isNaN(factor) || factor <= 0) err.conversionFactor = 'Faktor konversi harus lebih besar dari 0';
+      return err;
+    });
+    setBomErrors(newErrors);
+    return newErrors.every((e) => !e.productionUnit && !e.conversionFactor);
+  };
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validateBomConversions()) return;
     setSubmitting(true);
     setError(null);
     setSuccess(null);
@@ -118,6 +152,9 @@ export default function CreateProductPage() {
       const prices: Array<{ currency: 'IDR'|'USD'; price: number }> = [];
       if (form.priceIDR && Number(form.priceIDR) > 0) prices.push({ currency: 'IDR', price: Number(form.priceIDR) });
       if (form.priceUSD && Number(form.priceUSD) > 0) prices.push({ currency: 'USD', price: Number(form.priceUSD) });
+      const bomPayload = bomConversions.length
+        ? bomConversions.map((b) => ({ productionUnit: b.productionUnit.trim(), conversionFactor: parseFloat(b.conversionFactor) }))
+        : undefined;
       const created = await tradingService.createProduct({
         name: form.name,
         description: form.description,
@@ -125,6 +162,7 @@ export default function CreateProductPage() {
         unit: form.unit,
         weight: Number(form.weight),
         volume: form.volume,
+        bomConversions: bomPayload,
       });
       // Attach images if present
       const coverPayload = coverImage ? {
@@ -317,6 +355,16 @@ export default function CreateProductPage() {
 
           {error && <div className="text-sm text-red-600">{error}</div>}
           {success && <div className="text-sm text-green-700">{success}</div>}
+
+          {/* BOM Conversion Section */}
+          <BomConversionSection
+            catalogUnit={form.unit}
+            conversions={bomConversions}
+            errors={bomErrors}
+            onAdd={addBomRow}
+            onChange={updateBomRow}
+            onRemove={removeBomRow}
+          />
 
           <div className="pt-2 flex items-center gap-3">
             <button type="submit" disabled={disableSubmit} className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm hover:bg-slate-800 disabled:opacity-60">

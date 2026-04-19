@@ -21,6 +21,7 @@ export class TradingController {
     unit: string;
     weight: number;
     volume: string;
+    bomConversions?: Array<{ productionUnit: string; conversionFactor: number }>;
   }) {
     const targetSellerId = (req.user.role === Role.ADMIN_PUSAT && data.sellerId) ? data.sellerId : req.user.id;
     const status = (req.user.role === Role.ADMIN_PUSAT) ? "APPROVED" : undefined;
@@ -51,6 +52,7 @@ export class TradingController {
       unit: string;
       weight: number;
       volume: string;
+      bomConversions: Array<{ productionUnit: string; conversionFactor: number }> | null;
     }>,
   ) {
     return this.tradingService.updateProduct(id, req.user.id, data);
@@ -111,6 +113,7 @@ export class TradingController {
       unit: string;
       weight: number;
       volume: string;
+      bomConversions: Array<{ productionUnit: string; conversionFactor: number }> | null;
     }>,
   ) {
     return this.tradingService.adminUpdateProduct(id, data);
@@ -121,6 +124,13 @@ export class TradingController {
   @Roles(Role.ADMIN_PUSAT, Role.ADMIN, Role.ADMIN_TRADING, Role.SUPER_ADMIN)
   async adminDeleteProduct(@Param('id') id: string) {
     return this.tradingService.deleteProductAsAdmin(id);
+  }
+
+  // BOM Conversions: query by productionUnit (for produksi module)
+  @Get('bom-conversions')
+  @UseGuards(JwtAuthGuard)
+  async getBomConversionsByUnit(@Query('productionUnit') productionUnit: string) {
+    return this.tradingService.getBomConversionsByUnit(productionUnit || '');
   }
 
   // Order Endpoints
