@@ -20,7 +20,7 @@ export const tradingService = {
     const { data } = await axiosInstance.put(`/trading/products/${id}`, payload);
     return data as any;
   },
-  async adminUpdateProduct(id: string, payload: Partial<{ name: string; description: string; prices: Array<{ currency: 'IDR' | 'USD'; price: number }>; unit: string; weight: number; volume: string; }>) {
+  async adminUpdateProduct(id: string, payload: Partial<{ name: string; description: string; prices: Array<{ currency: 'IDR' | 'USD'; price: number }>; unit: string; weight: number; volume: string; bomConversions: Array<{ productionUnit: string; conversionFactor: number }> | null; }>) {
     const { data } = await axiosInstance.put(`/trading/admin/products/${id}`, payload);
     return data as any;
   },
