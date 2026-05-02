@@ -1069,6 +1069,9 @@ export class DapurService {
         fullAddress: data.fullAddress,
         signatureUrl: data.signatureUrl,
         adminDapurName: data.adminDapurName,
+        foundationName: data.foundationName,
+        kepalaSatuanName: data.kepalaSatuanName,
+        kepalaSatuanSignatureUrl: data.kepalaSatuanSignatureUrl,
         name: data.name
       }
     });

@@ -167,26 +167,33 @@ export default function AdminPusatPOPage() {
     const dateStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
     const dapurUnit = selectedPO.dapurUnit;
     
+    const pageWidth = doc.internal.pageSize.getWidth();
     if (dapurUnit?.logoUrl) {
       try {
-        doc.addImage(dapurUnit.logoUrl, 'PNG', 14, 10, 25, 25);
+        doc.addImage(dapurUnit.logoUrl, 'PNG', 14, 8, 22, 22);
       } catch (e) {}
     }
 
-    doc.setTextColor(217, 119, 6);
-    doc.setFontSize(22);
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(14);
     doc.setFont("helvetica", "bold");
-    doc.text(dapurUnit?.name?.toUpperCase() || "SENTRA DAPUR", dapurUnit?.logoUrl ? 45 : 14, 18);
+    doc.text(dapurUnit?.name?.toUpperCase() || "SENTRA DAPUR", pageWidth / 2, 15, { align: "center" });
     
-    doc.setTextColor(107, 114, 128);
-    doc.setFontSize(10);
+    doc.setFontSize(12);
+    doc.text(dapurUnit?.foundationName?.toUpperCase() || "", pageWidth / 2, 21, { align: "center" });
+
+    doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
-    const address = dapurUnit?.fullAddress || "Platform Manajemen Cloud Kitchen Terpadu";
-    const splitAddress = doc.splitTextToSize(address, dapurUnit?.logoUrl ? 150 : 180);
-    doc.text(splitAddress, dapurUnit?.logoUrl ? 45 : 14, 25);
+    const address = dapurUnit?.fullAddress || "Sistem Manajemen Cloud Kitchen Terpadu";
+    const splitAddress = doc.splitTextToSize(address, 160);
+    doc.text(splitAddress, pageWidth / 2, 27, { align: "center" });
     
-    doc.setDrawColor(229, 231, 235);
-    doc.line(14, 40, 196, 40);
+    // Double lines
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.8);
+    doc.line(14, 36, 196, 36);
+    doc.setLineWidth(0.2);
+    doc.line(14, 37.5, 196, 37.5);
     
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(14);
@@ -195,8 +202,8 @@ export default function AdminPusatPOPage() {
     
     doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
-    doc.text(`Tanggal Audit: ${dateStr}`, 14, 58);
-    doc.text(`Penerima (Supplier): ${supplierName}`, 14, 64);
+    doc.text(`Tanggal: ${dateStr}`, 14, 58);
+    doc.text(`Supplier: ${supplierName}`, 14, 64);
     
     const tableData = items.map((item, idx) => [
       idx + 1,
@@ -214,32 +221,48 @@ export default function AdminPusatPOPage() {
       body: tableData,
       foot: [['', '', '', 'TOTAL PESANAN', `Rp ${total.toLocaleString('id-ID')}`]],
       theme: 'grid',
-      headStyles: { fillColor: [217, 119, 6], textColor: [255, 255, 255], fontStyle: 'bold' },
-      footStyles: { fillColor: [245, 245, 245], textColor: [0, 0, 0], fontStyle: 'bold' },
+      headStyles: { fillColor: [31, 41, 55], textColor: [255, 255, 255], fontStyle: 'bold' },
+      footStyles: { fillColor: [249, 250, 251], textColor: [0, 0, 0], fontStyle: 'bold' },
       styles: { fontSize: 9 }
     });
 
     const finalY = (doc as any).lastAutoTable.finalY + 15;
-    if (finalY < 250) {
-      doc.setFontSize(10);
-      doc.setTextColor(75, 85, 99);
-      doc.text("Hormat Kami,", 140, finalY);
+    if (finalY < 230) {
+      // Date & Location
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(0, 0, 0);
+      doc.text(`Cibalong, ${dateStr}`, 155, finalY - 5, { align: "center" });
+
+      // Signature Akuntan (Left)
+      doc.text("Dibuat,", 40, finalY, { align: "center" });
+      doc.setFont("helvetica", "bold");
+      doc.text("Akuntan", 40, finalY + 5, { align: "center" });
       
       if (dapurUnit?.signatureUrl) {
         try {
-          doc.addImage(dapurUnit.signatureUrl, 'PNG', 140, finalY + 5, 40, 20);
+          doc.addImage(dapurUnit.signatureUrl, 'PNG', 20, finalY + 8, 40, 18);
         } catch (e) {}
       }
       
-      doc.setTextColor(31, 41, 55);
-      doc.setFont("helvetica", "bold");
-      doc.text(dapurUnit?.adminDapurName || "", 140, finalY + 30);
-      doc.setDrawColor(31, 41, 55);
-      doc.line(140, finalY + 31, 185, finalY + 31);
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      doc.setTextColor(107, 114, 128);
-      doc.text("Admin Dapur", 140, finalY + 35);
+      doc.text(dapurUnit?.adminDapurName || "", 40, finalY + 32, { align: "center" });
+
+      // Signature Kepala Satuan (Right)
+      doc.setFont("helvetica", "normal");
+      doc.text("Disetujui,", 155, finalY, { align: "center" });
+      doc.setFont("helvetica", "bold");
+      doc.text("Kepala Satuan Pelayanan Pemenuhan", 155, finalY + 5, { align: "center" });
+      doc.text("Gizi", 155, finalY + 10, { align: "center" });
+
+      if (dapurUnit?.kepalaSatuanSignatureUrl) {
+        try {
+          doc.addImage(dapurUnit.kepalaSatuanSignatureUrl, 'PNG', 135, finalY + 13, 40, 18);
+        } catch (e) {}
+      }
+
+      doc.setFont("helvetica", "normal");
+      doc.text(dapurUnit?.kepalaSatuanName || "", 155, finalY + 38, { align: "center" });
     }
     
     doc.save(`PO_SD_${poId}_${supplierName.replace(/\s+/g, '_')}.pdf`);
@@ -275,8 +298,9 @@ export default function AdminPusatPOPage() {
     const total = items.reduce((sum, item) => sum + (item.quantity * (item.pricePerUnit || 0)), 0);
     const dapurUnit = selectedPO.dapurUnit;
     
-    const logoHtml = dapurUnit?.logoUrl ? `<img src="${dapurUnit.logoUrl}" style="height: 80px; width: auto; object-fit: contain;" />` : '';
-    const signatureHtml = dapurUnit?.signatureUrl ? `<img src="${dapurUnit.signatureUrl}" style="height: 70px; width: auto; margin: 0 auto;" />` : '<div style="height: 70px;"></div>';
+    const logoHtml = dapurUnit?.logoUrl ? `<img src="${dapurUnit.logoUrl}" style="height: 60px; width: auto; object-fit: contain;" />` : '';
+    const sigAkuntanHtml = dapurUnit?.signatureUrl ? `<img src="${dapurUnit.signatureUrl}" style="height: 60px; width: auto; margin: 0 auto;" />` : '<div style="height: 60px;"></div>';
+    const sigKepalaHtml = dapurUnit?.kepalaSatuanSignatureUrl ? `<img src="${dapurUnit.kepalaSatuanSignatureUrl}" style="height: 60px; width: auto; margin: 0 auto;" />` : '<div style="height: 60px;"></div>';
     
     let itemsHtml = "";
     items.forEach((item, idx) => {
@@ -290,22 +314,26 @@ export default function AdminPusatPOPage() {
     });
 
     container.innerHTML = `
-      <div style="display: flex; align-items: center; gap: 20px; margin-bottom: 24px;">
-        ${logoHtml}
-        <div>
-          <div style="color: #d97706; font-size: 32px; font-weight: bold;">${(dapurUnit?.name || 'SENTRA DAPUR').toUpperCase()}</div>
-          <div style="color: #6b7280; font-size: 14px; max-width: 500px;">${dapurUnit?.fullAddress || 'Platform Manajemen Cloud Kitchen Terpadu'}</div>
+      <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 20px; position: relative; min-height: 80px;">
+        <div style="position: absolute; left: 0;">
+          ${logoHtml}
+        </div>
+        <div style="text-align: center;">
+          <div style="color: #000; font-size: 24px; font-weight: 800; line-height: 1.1;">${(dapurUnit?.name || 'SENTRA DAPUR').toUpperCase()}</div>
+          <div style="color: #000; font-size: 18px; font-weight: 700; margin-top: 4px;">${(dapurUnit?.foundationName || '').toUpperCase()}</div>
+          <div style="color: #4b5563; font-size: 11px; max-width: 600px; margin-top: 6px; line-height: 1.4;">${dapurUnit?.fullAddress || 'Jl. Cilimbangan No 2 Cililitan, Desa Cibalong Kecamatan Cibalong Kabupaten Tasikmalaya, Provinsi Jawa Barat'}</div>
         </div>
       </div>
-      <div style="border-bottom: 2px solid #e5e7eb; margin-bottom: 24px;"></div>
+      <div style="border-bottom: 3px solid #000; margin-bottom: 2px;"></div>
+      <div style="border-bottom: 1px solid #000; margin-bottom: 24px;"></div>
       
       <div style="font-size: 18px; font-weight: bold; margin-bottom: 8px;">PURCHASE ORDER #${poId}</div>
-      <div style="font-size: 14px; color: #374151; margin-bottom: 4px;">Tanggal: ${dateStr}</div>
-      <div style="font-size: 14px; color: #374151; margin-bottom: 24px;">Supplier: ${supplierName}</div>
+      <div style="font-size: 14px; margin-bottom: 4px;">Tanggal: ${dateStr}</div>
+      <div style="font-size: 14px; margin-bottom: 24px;">Supplier: ${supplierName}</div>
       
       <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
         <thead>
-          <tr style="background-color: #d97706; color: white;">
+          <tr style="background-color: #1f2937; color: white;">
             <th style="padding: 12px; border: 1px solid #e5e7eb; text-align: left;">No</th>
             <th style="padding: 12px; border: 1px solid #e5e7eb; text-align: left;">Bahan Baku</th>
             <th style="padding: 12px; border: 1px solid #e5e7eb; text-align: right;">Kuantitas</th>
@@ -319,17 +347,28 @@ export default function AdminPusatPOPage() {
         <tfoot style="background-color: #f9fafb; font-weight: bold;">
           <tr>
             <td colspan="4" style="padding: 12px; border: 1px solid #e5e7eb; text-align: right;">TOTAL PESANAN</td>
-            <td style="padding: 12px; border: 1px solid #e5e7eb; text-align: right; color: #d97706; font-size: 16px;">Rp ${total.toLocaleString('id-ID')}</td>
+            <td style="padding: 12px; border: 1px solid #e5e7eb; text-align: right; color: #000; font-size: 16px;">Rp ${total.toLocaleString('id-ID')}</td>
           </tr>
         </tfoot>
       </table>
 
-      <div style="display: flex; justify-content: flex-end; margin-top: 50px;">
-        <div style="text-align: center; width: 200px;">
-          <div style="font-size: 12px; margin-bottom: 30px; color: #4b5563;">Hormat Kami,</div>
-          ${signatureHtml}
-          <div style="border-top: 2px solid #1f2937; font-weight: bold; padding-top: 4px; font-size: 14px; margin-top: 4px;">${dapurUnit?.adminDapurName || ''}</div>
-          <div style="font-size: 11px; color: #6b7280; margin-top: 2px;">Admin Dapur</div>
+      <div style="display: flex; flex-direction: column; margin-top: 50px; background-color: #fff; padding: 20px; border-radius: 8px;">
+        <div style="display: flex; justify-content: flex-end; margin-bottom: 15px;">
+           <div style="font-size: 11px; color: #000;">Cibalong, ${dateStr}</div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 40px;">
+          <div style="text-align: center;">
+            <div style="font-size: 11px; color: #000; line-height: 1.2;">Dibuat,</div>
+            <div style="font-size: 11px; font-weight: bold; color: #000; margin-bottom: 30px;">Akuntan</div>
+            ${sigAkuntanHtml}
+            <div style="font-size: 11px; color: #000; margin-top: 4px;">${dapurUnit?.adminDapurName || ''}</div>
+          </div>
+          <div style="text-align: center;">
+            <div style="font-size: 11px; color: #000; line-height: 1.2;">Disetujui,</div>
+            <div style="font-size: 11px; font-weight: bold; color: #000; margin-bottom: 30px;">Kepala Satuan Pelayanan Pemenuhan<br/>Gizi</div>
+            ${sigKepalaHtml}
+            <div style="font-size: 11px; color: #000; margin-top: 4px;">${dapurUnit?.kepalaSatuanName || ''}</div>
+          </div>
         </div>
       </div>
       <div style="margin-top: 40px; font-size: 12px; color: #9ca3af; text-align: center; border-top: 1px dashed #e5e7eb; padding-top: 10px;">Generated by Sentra Dapur Platform</div>`;

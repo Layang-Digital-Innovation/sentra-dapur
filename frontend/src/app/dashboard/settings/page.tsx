@@ -48,6 +48,9 @@ export default function SettingsPage() {
     adminDapurName: "",
     logoUrl: "",
     signatureUrl: "",
+    foundationName: "",
+    kepalaSatuanName: "",
+    kepalaSatuanSignatureUrl: "",
   });
 
   // INITIAL LOAD
@@ -75,6 +78,9 @@ export default function SettingsPage() {
           adminDapurName: res.adminDapurName || "",
           logoUrl: res.logoUrl || "",
           signatureUrl: res.signatureUrl || "",
+          foundationName: res.foundationName || "",
+          kepalaSatuanName: res.kepalaSatuanName || "",
+          kepalaSatuanSignatureUrl: res.kepalaSatuanSignatureUrl || "",
         });
       }
     } catch (err: any) {
@@ -134,16 +140,17 @@ export default function SettingsPage() {
   };
 
   // BRANDING ACTIONS
-  const handleBrandingUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'logo' | 'signature') => {
+  const handleBrandingUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'logo' | 'signature' | 'kepalaSatuan') => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     try {
       setSaving(true);
-      const res = await uploadService.uploadDapurBranding(file, type);
+      const res = await uploadService.uploadDapurBranding(file, type === 'kepalaSatuan' ? 'kepala-satuan-signature' : type);
       const url = res.file.url;
-      setBrandingForm(prev => ({ ...prev, [type === 'logo' ? 'logoUrl' : 'signatureUrl']: url }));
-      setMessage(`${type === 'logo' ? 'Logo' : 'Tanda tangan'} berhasil diunggah. Klik Simpan Branding untuk menerapkan.`);
+      const fieldName = type === 'logo' ? 'logoUrl' : type === 'signature' ? 'signatureUrl' : 'kepalaSatuanSignatureUrl';
+      setBrandingForm(prev => ({ ...prev, [fieldName]: url }));
+      setMessage(`${type === 'logo' ? 'Logo' : type === 'signature' ? 'Tanda tangan' : 'Tanda tangan Kepala Satuan'} berhasil diunggah. Klik Simpan Branding untuk menerapkan.`);
     } catch (err: any) {
       setError(`Gagal mengunggah ${type === 'logo' ? 'logo' : 'tanda tangan'}.`);
     } finally {
@@ -327,7 +334,7 @@ export default function SettingsPage() {
                 
                 <div className="space-y-6">
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
                        <FiImage className="text-slate-400" /> Nama Dapur (Header PO)
                     </label>
                     <input
@@ -340,15 +347,28 @@ export default function SettingsPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
                        <FiMapPin className="text-slate-400" /> Alamat Lengkap
                     </label>
                     <textarea
                       value={brandingForm.fullAddress}
                       onChange={(e) => setBrandingForm(p => ({ ...p, fullAddress: e.target.value }))}
-                      rows={4}
+                      rows={3}
                       className="w-full px-5 py-3 border-2 border-slate-100 rounded-xl focus:border-amber-500 focus:ring-0 outline-none font-medium transition-all resize-none"
                       placeholder="Alamat lengkap yang akan muncul di dokumen resmi..."
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                       <FiFileText className="text-slate-400" /> Nama Yayasan (Header PO)
+                    </label>
+                    <input
+                      type="text"
+                      value={brandingForm.foundationName}
+                      onChange={(e) => setBrandingForm(p => ({ ...p, foundationName: e.target.value }))}
+                      className="w-full px-5 py-3 border-2 border-slate-100 rounded-xl focus:border-amber-500 focus:ring-0 outline-none font-medium transition-all"
+                      placeholder="Contoh: YAYASAN NURUL FATAH JALATRANG"
                     />
                   </div>
 
@@ -370,7 +390,7 @@ export default function SettingsPage() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Scan Tanda Tangan</label>
+                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Tanda Tangan Akuntan</label>
                       <div className="flex flex-col items-center p-4 bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl relative group">
                         {brandingForm.signatureUrl ? (
                           <img src={brandingForm.signatureUrl} alt="Signature" className="h-20 w-auto object-contain mb-3" />
@@ -381,21 +401,53 @@ export default function SettingsPage() {
                           {brandingForm.signatureUrl ? "GANTI TTD" : "UPLOAD TTD"}
                           <input type="file" className="hidden" accept="image/*" onChange={(e) => handleBrandingUpload(e, 'signature')} disabled={saving} />
                         </label>
-                        <p className="text-[10px] text-slate-400 mt-2 font-medium">Background: Putih/Transparan</p>
+                        <p className="text-[10px] text-slate-400 mt-2 font-medium">BG: Putih/Transparan</p>
                       </div>
                     </div>
                   </div>
 
-                  <div className="pt-4">
-                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
-                       <FiUser className="text-slate-400" /> Nama Admin (Penandatangan)
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Tanda Tangan Kepala Satuan</label>
+                      <div className="flex flex-col items-center p-4 bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl relative group">
+                        {brandingForm.kepalaSatuanSignatureUrl ? (
+                          <img src={brandingForm.kepalaSatuanSignatureUrl} alt="Signature" className="h-20 w-auto object-contain mb-3" />
+                        ) : (
+                          <FiFileText className="w-12 h-12 text-slate-300 mb-3" />
+                        )}
+                        <label className="cursor-pointer px-4 py-2 bg-white text-slate-700 font-bold text-xs rounded-lg border shadow-sm hover:bg-slate-50 transition-colors">
+                          {brandingForm.kepalaSatuanSignatureUrl ? "GANTI TTD" : "UPLOAD TTD"}
+                          <input type="file" className="hidden" accept="image/*" onChange={(e) => handleBrandingUpload(e, 'kepalaSatuan')} disabled={saving} />
+                        </label>
+                        <p className="text-[10px] text-slate-400 mt-2 font-medium">BG: Putih/Transparan</p>
+                      </div>
+                    </div>
+                    <div>
+                       <div className="pt-0">
+                         <label className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                            <FiUser className="text-slate-400" /> Nama Kepala Satuan
+                         </label>
+                         <input
+                           type="text"
+                           value={brandingForm.kepalaSatuanName}
+                           onChange={(e) => setBrandingForm(p => ({ ...p, kepalaSatuanName: e.target.value }))}
+                           className="w-full px-5 py-3 border-2 border-slate-100 rounded-xl focus:border-amber-500 focus:ring-0 outline-none font-medium transition-all"
+                           placeholder="Nama lengkap Kepala Satuan"
+                         />
+                       </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2">
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                       <FiUser className="text-slate-400" /> Nama Akuntan (Penandatangan)
                     </label>
                     <input
                       type="text"
                       value={brandingForm.adminDapurName}
                       onChange={(e) => setBrandingForm(p => ({ ...p, adminDapurName: e.target.value }))}
                       className="w-full px-5 py-3 border-2 border-slate-100 rounded-xl focus:border-amber-500 focus:ring-0 outline-none font-medium transition-all"
-                      placeholder="Nama lengkap admin yang bertanda tangan"
+                      placeholder="Nama lengkap akuntan yang bertanda tangan"
                     />
                   </div>
                 </div>
@@ -418,40 +470,58 @@ export default function SettingsPage() {
                <div className="bg-slate-900 rounded-3xl p-1 shadow-2xl">
                  <div className="bg-white rounded-[1.4rem] overflow-hidden min-h-[500px] flex flex-col">
                     <div className="p-8 border-b-8 border-slate-100 flex-1">
-                       <div className="flex flex-col items-center text-center mb-8">
-                          {brandingForm.logoUrl ? (
-                            <img src={brandingForm.logoUrl} alt="Preview Logo" className="h-16 w-auto object-contain mb-4" />
-                          ) : (
-                            <div className="w-16 h-16 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-center text-slate-300 text-[10px] font-bold">LOGO</div>
-                          )}
-                          <h3 className="text-2xl font-black text-amber-600 uppercase tracking-tight">{brandingForm.name || "NAMA UNIT DAPUR"}</h3>
-                          <p className="text-xs text-slate-400 max-w-xs mt-2 line-clamp-2">{brandingForm.fullAddress || "Alamat lengkap dapur akan muncul di area ini pada dokumen resmi Purchase Order."}</p>
-                       </div>
+                        <div className="flex items-center gap-4 mb-4 relative">
+                           {brandingForm.logoUrl ? (
+                             <img src={brandingForm.logoUrl} alt="Preview Logo" className="h-16 w-auto object-contain absolute left-0" />
+                           ) : (
+                             <div className="w-16 h-16 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-center text-slate-300 text-[10px] font-bold absolute left-0">LOGO</div>
+                           )}
+                           <div className="flex-1 text-center px-16">
+                             <h3 className="text-lg font-bold text-slate-900 uppercase leading-none">{brandingForm.name || "NAMA UNIT DAPUR"}</h3>
+                             <h4 className="text-base font-bold text-slate-800 uppercase mt-1">{brandingForm.foundationName || "NAMA YAYASAN"}</h4>
+                             <p className="text-[9px] text-slate-600 mt-1 leading-tight">{brandingForm.fullAddress || "Jl. Cilimbangan No 2 Cililitan, Desa Cibalong Kecamatan Cibalong Kabupaten Tasikmalaya, Provinsi Jawa Barat"}</p>
+                           </div>
+                        </div>
 
-                       <div className="border-y-2 border-slate-50 py-4 my-8 flex justify-between items-center opacity-20">
-                          <div className="h-3 w-32 bg-slate-200 rounded-full"></div>
-                          <div className="h-3 w-20 bg-slate-200 rounded-full"></div>
+                        <div className="space-y-0.5 mb-6">
+                           <div className="h-[2.5px] w-full bg-black"></div>
+                           <div className="h-[0.5px] w-full bg-black"></div>
+                        </div>
+
+                       <div className="flex justify-center mb-6">
+                          <div className="h-4 w-32 bg-slate-200 rounded-full"></div>
                        </div>
                        
                        <div className="space-y-3 opacity-10">
-                          <div className="h-4 w-full bg-slate-200 rounded-lg"></div>
                           <div className="h-4 w-full bg-slate-200 rounded-lg"></div>
                           <div className="h-12 w-full bg-slate-100 rounded-xl"></div>
                        </div>
                     </div>
 
-                    <div className="p-8 bg-slate-50 flex flex-col items-end">
-                       <div className="text-center w-40">
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Hormat Kami,</p>
-                          <div className="h-16 flex items-center justify-center mb-1">
+                    <div className="p-8 bg-slate-50 grid grid-cols-2 gap-4">
+                       <div className="text-center">
+                          <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-4">Dibuat,</p>
+                          <div className="h-12 flex items-center justify-center mb-1">
                              {brandingForm.signatureUrl ? (
-                               <img src={brandingForm.signatureUrl} alt="Preview Signature" className="h-full w-auto object-contain" />
+                               <img src={brandingForm.signatureUrl} alt="Akuntan Signature" className="h-full w-auto object-contain" />
                              ) : (
-                               <div className="text-[10px] text-slate-300 italic border border-dashed border-slate-300 px-4 py-1">Tanda Tangan</div>
+                               <div className="text-[8px] text-slate-300 italic border border-dashed border-slate-300 px-3 py-1">Tanda Tangan</div>
                              )}
                           </div>
-                          <p className="text-sm font-bold text-slate-800 border-t-2 border-slate-900 pt-1 uppercase truncate">{brandingForm.adminDapurName || "NAMA ADMIN"}</p>
-                          <p className="text-[10px] font-medium text-slate-400">Admin Dapur Unit</p>
+                          <p className="text-[10px] font-bold text-slate-800 border-t-2 border-slate-900 pt-1 uppercase truncate">{brandingForm.adminDapurName || "NAMA AKUNTAN"}</p>
+                          <p className="text-[8px] font-medium text-slate-400">Akuntan</p>
+                       </div>
+                       <div className="text-center">
+                          <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-4">Disetujui,</p>
+                          <div className="h-12 flex items-center justify-center mb-1">
+                             {brandingForm.kepalaSatuanSignatureUrl ? (
+                               <img src={brandingForm.kepalaSatuanSignatureUrl} alt="Kepala Signature" className="h-full w-auto object-contain" />
+                             ) : (
+                               <div className="text-[8px] text-slate-300 italic border border-dashed border-slate-300 px-3 py-1">Tanda Tangan</div>
+                             )}
+                          </div>
+                          <p className="text-[10px] font-bold text-slate-800 border-t-2 border-slate-900 pt-1 uppercase truncate">{brandingForm.kepalaSatuanName || "KEPALA SATUAN"}</p>
+                          <p className="text-[7px] font-medium text-slate-400 leading-tight">Kepala Satuan Pelayanan<br/>Pemenuhan Gizi</p>
                        </div>
                     </div>
                  </div>

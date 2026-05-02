@@ -849,7 +849,10 @@ model DapurUnit {
   logoUrl        String?
   fullAddress    String?
   signatureUrl   String?
-  adminDapurName String?
+  adminDapurName            String?
+  foundationName            String?
+  kepalaSatuanName          String?
+  kepalaSatuanSignatureUrl  String?
 
   // Micro-investment
   microInvestors MicroInvestor[]

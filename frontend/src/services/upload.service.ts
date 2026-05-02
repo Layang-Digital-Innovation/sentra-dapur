@@ -120,7 +120,7 @@ class UploadService {
     return response.json();
   }
 
-  async uploadDapurBranding(file: File, type: 'logo' | 'signature'): Promise<{ message: string; file: UploadedFile }> {
+  async uploadDapurBranding(file: File, type: 'logo' | 'signature' | 'kepala-satuan-signature'): Promise<{ message: string; file: UploadedFile }> {
     const formData = new FormData();
     formData.append('file', file);
 

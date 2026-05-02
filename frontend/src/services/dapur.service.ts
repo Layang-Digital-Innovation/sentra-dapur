@@ -26,6 +26,9 @@ export interface DapurUnit {
   adminDapur?: { id: string; fullname: string; email: string };
   adminPusat?: { id: string; fullname: string; email: string };
   adminDapurName?: string;
+  foundationName?: string;
+  kepalaSatuanName?: string;
+  kepalaSatuanSignatureUrl?: string;
   reportedBy?: { fullname: string; email: string };
   approvedBy?: { fullname: string; email: string };
   createdAt: string;
