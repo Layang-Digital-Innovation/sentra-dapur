@@ -31,6 +31,8 @@ import {
   FiSettings,
   FiActivity,
   FiUserCheck,
+  FiList,
+  FiLayers,
 } from 'react-icons/fi';
 import { Logo } from '@/components/ui/Logo';
 
@@ -54,13 +56,15 @@ const ROLE_MENUS: Record<string, { name: string; href: string; icon: React.React
     { name: 'PO Automation (Kalkulasi)', href: '/dashboard/admin-dapur/kalkulasi', icon: <FiClipboard />, keywords: ['kalkulasi', 'otomatis', 'po', 'purchase', 'order'] },
     { name: 'List Purchase Order', href: '/dashboard/admin-dapur/po', icon: <FiShoppingBag />, keywords: ['po', 'purchase', 'order', 'pembelian', 'daftar'] },
     { name: 'Invoice & Pembayaran', href: '/dashboard/admin-dapur/po/invoices', icon: <FiDollarSign />, keywords: ['invoice', 'pembayaran', 'tagihan', 'bayar'] },
-    { name: 'Tim Produksi', href: '/dashboard/admin-dapur/produksi', icon: <FiUsers />, keywords: ['tim', 'produksi', 'karyawan', 'staff'] },
+    { name: 'Manajemen Tim', href: '/dashboard/admin-dapur/produksi', icon: <FiUsers />, keywords: ['tim', 'produksi', 'karyawan', 'staff', 'akuntan', 'ahli gizi', 'chef', 'gudang'] },
     { name: 'Laporan Keuangan', href: '/dashboard/admin-dapur/laporan', icon: <FiBook />, keywords: ['laporan', 'keuangan', 'bku', 'bkk', 'lbbp', 'lra', 'lbo', 'lbs', 'lpd2m', 'pdf', 'excel', 'download'] },
     { name: 'Settings', href: '/dashboard/settings', icon: <FiSettings />, keywords: ['pengaturan', 'settings', 'profil'] },
   ],
   ADMIN_PUSAT: [
     { name: 'Dashboard Pusat', href: '/dashboard/admin-pusat', icon: <FiActivity />, keywords: ['dashboard', 'beranda', 'pusat'] },
-    { name: 'Approval Transaksi', href: '/dashboard/admin-pusat/approvals', icon: <FiUserCheck />, keywords: ['approval', 'persetujuan', 'transaksi'] },
+    { name: 'Approval Transaksi', href: '/dashboard/admin-pusat/approvals', icon: <FiUserCheck />, keywords: ['approval', 'persetujuan', 'transaksi', 'pending'] },
+    { name: 'Riwayat Transaksi', href: '/dashboard/admin-pusat/transaksi/riwayat', icon: <FiList />, keywords: ['riwayat', 'history', 'transaksi', 'disetujui', 'ditolak'] },
+    { name: 'Kas Dapur', href: '/dashboard/admin-pusat/buku-kas/dapur', icon: <FiLayers />, keywords: ['buku', 'kas', 'dapur', 'umum', 'pembantu', 'kecil'] },
     { name: 'Unit Dapur', href: '/dashboard/admin-pusat/dapur', icon: <FiFolder />, keywords: ['dapur', 'unit', 'kitchen'] },
     { name: 'Manajemen User', href: '/dashboard/admin-pusat/users', icon: <FiUsers />, keywords: ['user', 'pengguna', 'manajemen', 'akun'] },
     { name: 'Master Porsi', href: '/dashboard/admin-pusat/porsi', icon: <FiSettings />, keywords: ['porsi', 'master', 'ukuran'] },
@@ -72,6 +76,7 @@ const ROLE_MENUS: Record<string, { name: string; href: string; icon: React.React
   PROJECT_OWNER: [
     { name: 'Dashboard PO', href: '/dashboard/project-owner', icon: <FiHome />, keywords: ['dashboard', 'beranda'] },
     { name: 'Approval Transaksi', href: '/dashboard/admin-pusat/approvals', icon: <FiUserCheck />, keywords: ['approval', 'persetujuan'] },
+    { name: 'Persetujuan Ubah Kas', href: '/dashboard/project-owner/kas-pending', icon: <FiDollarSign />, keywords: ['kas', 'buku', 'ubah', 'hapus', 'project owner'] },
     { name: 'Admin Pusat', href: '/dashboard/project-owner/admin-pusat', icon: <FiUsers />, keywords: ['admin', 'pusat', 'manajemen'] },
     { name: 'Data Dapur', href: '/dashboard/project-owner/dapur', icon: <FiFolder />, keywords: ['dapur', 'data', 'unit'] },
     { name: 'Dividen & Laba', href: '/dashboard/project-owner/dividen', icon: <FiDollarSign />, keywords: ['dividen', 'laba', 'profit', 'keuangan'] },
@@ -84,6 +89,41 @@ const ROLE_MENUS: Record<string, { name: string; href: string; icon: React.React
     { name: 'Kalkulasi PO', href: '/dashboard/admin-dapur/kalkulasi', icon: <FiClipboard />, keywords: ['kalkulasi', 'po', 'purchase'] },
     { name: 'Stok Bahan Baku', href: '/dashboard/admin-dapur/stok', icon: <FiPackage />, keywords: ['stok', 'bahan', 'baku', 'gudang'] },
     { name: 'Settings', href: '/dashboard/settings', icon: <FiSettings />, keywords: ['pengaturan', 'settings'] },
+  ],
+  AHLI_GIZI: [
+    { name: 'Dashboard', href: '/dashboard/produksi', icon: <FiHome />, keywords: ['dashboard', 'beranda'] },
+    { name: 'Master Menu', href: '/dashboard/admin-dapur/menu', icon: <FiBook />, keywords: ['menu', 'resep', 'makanan'] },
+    { name: 'Penjadwalan Menu', href: '/dashboard/admin-dapur/kalender', icon: <FiCalendar />, keywords: ['jadwal', 'kalender', 'planning'] },
+    { name: 'Kalkulasi PO', href: '/dashboard/admin-dapur/kalkulasi', icon: <FiClipboard />, keywords: ['kalkulasi', 'po', 'purchase'] },
+    { name: 'Stok Bahan Baku', href: '/dashboard/admin-dapur/stok', icon: <FiPackage />, keywords: ['stok', 'bahan', 'baku', 'gudang'] },
+    { name: 'Settings', href: '/dashboard/settings', icon: <FiSettings />, keywords: ['pengaturan', 'settings'] },
+  ],
+  CHEF: [
+    { name: 'Dashboard', href: '/dashboard/produksi', icon: <FiHome />, keywords: ['dashboard', 'beranda'] },
+    { name: 'Master Menu', href: '/dashboard/admin-dapur/menu', icon: <FiBook />, keywords: ['menu', 'resep', 'makanan'] },
+    { name: 'Penjadwalan Menu', href: '/dashboard/admin-dapur/kalender', icon: <FiCalendar />, keywords: ['jadwal', 'kalender', 'planning'] },
+    { name: 'Kalkulasi PO', href: '/dashboard/admin-dapur/kalkulasi', icon: <FiClipboard />, keywords: ['kalkulasi', 'po', 'purchase'] },
+    { name: 'Stok Bahan Baku', href: '/dashboard/admin-dapur/stok', icon: <FiPackage />, keywords: ['stok', 'bahan', 'baku', 'gudang'] },
+    { name: 'Settings', href: '/dashboard/settings', icon: <FiSettings />, keywords: ['pengaturan', 'settings'] },
+  ],
+  AKUNTAN: [
+    { name: 'Dashboard Dapur', href: '/dashboard/admin-dapur', icon: <FiHome />, keywords: ['dashboard', 'beranda', 'home'] },
+    { name: 'Kas Umum', href: '/dashboard/admin-dapur/arus-kas/umum', icon: <FiDollarSign />, keywords: ['kas', 'umum', 'keuangan', 'buku'] },
+    { name: 'Kas Pembantu', href: '/dashboard/admin-dapur/arus-kas/pembantu', icon: <FiDollarSign />, keywords: ['kas', 'pembantu', 'keuangan', 'buku'] },
+    { name: 'Gudang Bahan', href: '/dashboard/admin-dapur/gudang/bahan', icon: <FiPackage />, keywords: ['gudang', 'bahan', 'stok', 'inventori'] },
+    { name: 'Gudang Lain-lain', href: '/dashboard/admin-dapur/gudang/lain', icon: <FiPackage />, keywords: ['gudang', 'lain', 'stok', 'inventori'] },
+    { name: 'Master Menu', href: '/dashboard/admin-dapur/menu', icon: <FiBook />, keywords: ['menu', 'master', 'resep', 'makanan'] },
+    { name: 'Penjadwalan Menu', href: '/dashboard/admin-dapur/kalender', icon: <FiCalendar />, keywords: ['jadwal', 'kalender', 'menu', 'planning'] },
+    { name: 'PO Automation (Kalkulasi)', href: '/dashboard/admin-dapur/kalkulasi', icon: <FiClipboard />, keywords: ['kalkulasi', 'otomatis', 'po', 'purchase', 'order'] },
+    { name: 'List Purchase Order', href: '/dashboard/admin-dapur/po', icon: <FiShoppingBag />, keywords: ['po', 'purchase', 'order', 'pembelian', 'daftar'] },
+    { name: 'Invoice & Pembayaran', href: '/dashboard/admin-dapur/po/invoices', icon: <FiDollarSign />, keywords: ['invoice', 'pembayaran', 'tagihan', 'bayar'] },
+    { name: 'Manajemen Tim', href: '/dashboard/admin-dapur/produksi', icon: <FiUsers />, keywords: ['tim', 'produksi', 'karyawan', 'staff', 'akuntan', 'ahli gizi', 'chef', 'gudang'] },
+    { name: 'Laporan Keuangan', href: '/dashboard/admin-dapur/laporan', icon: <FiBook />, keywords: ['laporan', 'keuangan', 'bku', 'bkk', 'lbbp', 'lra', 'lbo', 'lbs', 'lpd2m', 'pdf', 'excel', 'download'] },
+    { name: 'Settings', href: '/dashboard/settings', icon: <FiSettings />, keywords: ['pengaturan', 'settings', 'profil'] },
+  ],
+  GUDANG: [
+    { name: 'Gudang Bahan', href: '/dashboard/admin-dapur/gudang/bahan', icon: <FiPackage />, keywords: ['gudang', 'bahan', 'stok', 'inventori'] },
+    { name: 'Gudang Lain-lain', href: '/dashboard/admin-dapur/gudang/lain', icon: <FiPackage />, keywords: ['gudang', 'lain', 'stok', 'inventori'] },
   ],
 };
 
@@ -243,6 +283,10 @@ const DashboardNavbar: React.FC<DashboardNavbarProps> = ({
     ADMIN_PUSAT: 'Cari dapur, user, PO, katalog...',
     PROJECT_OWNER: 'Cari dapur, dividen, approval...',
     PRODUKSI: 'Cari menu, jadwal, kalkulasi...',
+    AKUNTAN: 'Cari kas, laporan, PO, gudang...',
+    AHLI_GIZI: 'Cari menu, jadwal, kalkulasi...',
+    CHEF: 'Cari menu, jadwal, kalkulasi...',
+    GUDANG: 'Cari gudang bahan & lain-lain...',
   };
   const searchPlaceholder = placeholderByRole[role] || 'Cari fitur...';
 

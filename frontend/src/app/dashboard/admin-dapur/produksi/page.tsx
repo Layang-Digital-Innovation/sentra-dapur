@@ -15,6 +15,22 @@ interface ProduksiUser {
 }
 
 type ModalMode = "create" | "edit" | null;
+type TeamRole = "PRODUKSI" | "AKUNTAN" | "AHLI_GIZI" | "CHEF" | "GUDANG";
+
+const TEAM_ROLES: { value: TeamRole; label: string }[] = [
+  { value: "PRODUKSI", label: "Produksi" },
+  { value: "AKUNTAN", label: "Akuntan" },
+  { value: "AHLI_GIZI", label: "Ahli Gizi" },
+  { value: "CHEF", label: "Chef" },
+  { value: "GUDANG", label: "Gudang" },
+];
+
+const TEAM_ROLE_SET = new Set(TEAM_ROLES.map((item) => item.value));
+
+const getRoleLabel = (role: string) => {
+  const hit = TEAM_ROLES.find((item) => item.value === role);
+  return hit?.label || role;
+};
 
 export default function TimProduksiPage() {
   const { user } = useAuth();
@@ -23,13 +39,14 @@ export default function TimProduksiPage() {
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<ModalMode>(null);
   const [selected, setSelected] = useState<ProduksiUser | null>(null);
-  const [form, setForm] = useState({ email: "", password: "", fullName: "" });
+  const [form, setForm] = useState({ email: "", password: "", fullName: "", role: "PRODUKSI" as TeamRole });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
 
   useEffect(() => {
-    if (user?.user.role !== "ADMIN_DAPUR") {
+    const allowedRoles = ["ADMIN_DAPUR", "AKUNTAN"];
+    if (!allowedRoles.includes(user?.user.role || "")) {
       router.replace("/dashboard");
       return;
     }
@@ -39,8 +56,11 @@ export default function TimProduksiPage() {
   const loadUsers = async () => {
     setLoading(true);
     try {
-      const res = await axiosInstance.get("/users?role=PRODUKSI");
-      setUsers(res.data?.users || []);
+      const requests = TEAM_ROLES.map((item) => axiosInstance.get(`/users?role=${item.value}`));
+      const responses = await Promise.all(requests);
+      const merged = responses.flatMap((res) => res.data?.users || []);
+      const teamOnly = merged.filter((u) => TEAM_ROLE_SET.has(u.role as TeamRole));
+      setUsers(teamOnly);
     } catch (e) {
       console.error(e);
     } finally {
@@ -50,14 +70,19 @@ export default function TimProduksiPage() {
 
   const openCreate = () => {
     setSelected(null);
-    setForm({ email: "", password: "", fullName: "" });
+    setForm({ email: "", password: "", fullName: "", role: "PRODUKSI" });
     setError("");
     setMode("create");
   };
 
   const openEdit = (u: ProduksiUser) => {
     setSelected(u);
-    setForm({ email: u.email, password: "", fullName: u.fullName || "" });
+    setForm({
+      email: u.email,
+      password: "",
+      fullName: u.fullName || "",
+      role: TEAM_ROLE_SET.has(u.role as TeamRole) ? (u.role as TeamRole) : "PRODUKSI",
+    });
     setError("");
     setMode("edit");
   };
@@ -69,9 +94,9 @@ export default function TimProduksiPage() {
     setError("");
     try {
       if (mode === "create") {
-        await axiosInstance.post("/users", { ...form, role: "PRODUKSI" });
+        await axiosInstance.post("/users", { ...form, role: form.role });
       } else if (mode === "edit" && selected) {
-        const payload: any = { email: form.email, fullName: form.fullName };
+        const payload: any = { email: form.email, fullName: form.fullName, role: form.role };
         if (form.password.trim()) payload.password = form.password;
         await axiosInstance.put(`/users/${selected.id}`, payload);
       }
@@ -110,17 +135,17 @@ export default function TimProduksiPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <FiUsers className="text-purple-500" /> Tim Produksi
+            <FiUsers className="text-purple-500" /> Manajemen Tim
           </h1>
           <p className="text-gray-500 text-sm mt-1">
-            Kelola akun staf produksi untuk dapur Anda
+            Kelola akun tim dapur (Produksi, Akuntan, Ahli Gizi, Chef, Gudang)
           </p>
         </div>
         <button
           onClick={openCreate}
           className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 shadow-sm"
         >
-          <FiPlus /> Tambah Staf
+          <FiPlus /> Tambah Tim
         </button>
       </div>
 
@@ -128,7 +153,7 @@ export default function TimProduksiPage() {
       <input
         value={search}
         onChange={e => setSearch(e.target.value)}
-        placeholder="🔍 Cari nama atau email staf..."
+        placeholder="🔍 Cari nama atau email tim..."
         className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
       />
 
@@ -136,15 +161,15 @@ export default function TimProduksiPage() {
       {filtered.length === 0 ? (
         <div className="bg-white rounded-xl border-2 border-dashed border-gray-200 p-12 text-center">
           <FiUsers className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <h3 className="font-semibold text-gray-500">Belum Ada Staf Produksi</h3>
+          <h3 className="font-semibold text-gray-500">Belum Ada Tim Dapur</h3>
           <p className="text-sm text-gray-400 mt-1">
-            Tambahkan akun untuk staf produksi dapur Anda
+            Tambahkan akun untuk tim dapur Anda
           </p>
           <button
             onClick={openCreate}
             className="mt-4 px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700"
           >
-            + Tambah Staf Sekarang
+            + Tambah Tim Sekarang
           </button>
         </div>
       ) : (
@@ -173,7 +198,7 @@ export default function TimProduksiPage() {
                   <td className="px-6 py-4 text-sm text-gray-600">{u.email}</td>
                   <td className="px-6 py-4">
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-800">
-                      Produksi
+                      {getRoleLabel(u.role)}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-400">
@@ -208,7 +233,7 @@ export default function TimProduksiPage() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-bold text-gray-900">
-                {mode === "create" ? "Tambah" : "Edit"} Staf Produksi
+                {mode === "create" ? "Tambah" : "Edit"} Anggota Tim
               </h2>
               <button onClick={() => setMode(null)} className="p-2 hover:bg-gray-100 rounded-lg">
                 <FiX className="w-4 h-4" />
@@ -238,6 +263,22 @@ export default function TimProduksiPage() {
                   placeholder="produksi@dapur.com"
                   className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Role Tim <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={form.role}
+                  onChange={e => setForm(p => ({ ...p, role: e.target.value as TeamRole }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
+                >
+                  {TEAM_ROLES.map((role) => (
+                    <option key={role.value} value={role.value}>
+                      {role.label}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">

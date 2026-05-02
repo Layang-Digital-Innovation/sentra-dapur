@@ -7,7 +7,18 @@ import * as bcrypt from 'bcryptjs';
 export class UsersService {
   constructor(private prisma: PrismaService) {}
 
-  async create(data: { email: string; password?: string; role: Role; kycDocs?: string; fullname?: string; whatsapp?: string; noRekening?: string; namaRekening?: string }): Promise<User> {
+  async create(data: {
+    email: string;
+    password?: string;
+    role: Role;
+    kycDocs?: string;
+    fullname?: string;
+    whatsapp?: string;
+    noRekening?: string;
+    namaRekening?: string;
+    /** Same subscription as Admin Dapur so team roles resolve `dapurUnitId` (stok, my-unit, etc.). */
+    subscriptionId?: string | null;
+  }): Promise<User> {
     const existingUser = await this.prisma.user.findUnique({
       where: { email: data.email },
     });
@@ -30,6 +41,7 @@ export class UsersService {
         noRekening: data.noRekening || null,
         namaRekening: data.namaRekening || null,
         kycDocs: data.kycDocs || null,
+        ...(data.subscriptionId != null ? { subscriptionId: data.subscriptionId } : {}),
       },
     });
   }
@@ -56,6 +68,15 @@ export class UsersService {
     }
     
     return user;
+  }
+
+  /** Subscription row id (may include `dapurUnitId`) — used to link tim dapur to the same unit as Admin Dapur. */
+  async getSubscriptionIdForUser(userId: string): Promise<string | null> {
+    const u = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { subscriptionId: true },
+    });
+    return u?.subscriptionId ?? null;
   }
   
   async findAllByRole(role: Role) {

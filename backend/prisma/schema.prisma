@@ -82,7 +82,10 @@ model User {
 
   // Cashback reporter
   reportedCashbacks DapurCashback[] @relation("CashbackReporter")
+  stokOpnameLogs    StokOpnameLog[] @relation("StokOpnameBy")
   subscriptionId    String?
+
+  publishedLabaRugiReports DapurLabaRugi[] @relation("LabaRugiPublisher")
 }
 
 model Project {
@@ -418,6 +421,10 @@ enum Role {
   ADMIN_PUSAT
   ADMIN_DAPUR
   PRODUKSI
+  AKUNTAN
+  AHLI_GIZI
+  CHEF
+  GUDANG
   BUYER
   SUPPLIER
   ADMIN
@@ -827,6 +834,7 @@ model DapurUnit {
   // Operations
   arusKas        ArusKas[]
   stok           Stok[]
+  stokOpnameLogs StokOpnameLog[]
   purchaseOrders PurchaseOrder[]
 
   // Produksi relations
@@ -852,8 +860,36 @@ model DapurUnit {
   // Cashback (income from suppliers)
   cashbacks DapurCashback[]
 
+  // Laba Rugi Reports
+  labaRugiReports DapurLabaRugi[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model DapurLabaRugi {
+  id              String    @id @default(uuid())
+  dapurUnit       DapurUnit @relation(fields: [dapurUnitId], references: [id], onDelete: Cascade)
+  dapurUnitId     String
+  
+  period          String    // Format: "YYYY-MM" (contoh: "2026-03")
+  
+  totalIncome     Float
+  totalExpense    Float
+  netProfit       Float
+
+  status          String    @default("PUBLISHED") // Draft / Published
+  publishedAt     DateTime  @default(now())
+
+  publishedBy     User      @relation("LabaRugiPublisher", fields: [publishedById], references: [id])
+  publishedById   String
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([dapurUnitId, period])
+  @@index([dapurUnitId])
+  @@index([publishedById])
 }
 
 model DapurInvestor {
@@ -945,6 +981,11 @@ model ArusKas {
   approvedBy   User?   @relation("ApprovedBy", fields: [approvedById], references: [id])
   approvedById String?
 
+  /// Admin Pusat mengajukan ubah/hapus; Project Owner yang menyetujui menolak.
+  pendingPoApproval Boolean @default(false)
+  markedForDeletion Boolean @default(false)
+  pendingEditData   Json?
+
   createdAt DateTime @default(now())
 }
 
@@ -977,12 +1018,41 @@ model Stok {
   unit     String
 
   category StokCategory @default(BAHAN)
+  opnameLogs StokOpnameLog[]
 
   lastUpdatedBy   User   @relation(fields: [lastUpdatedById], references: [id])
   lastUpdatedById String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model StokOpnameLog {
+  id          String     @id @default(uuid())
+  dapurUnit   DapurUnit? @relation(fields: [dapurUnitId], references: [id], onDelete: Cascade)
+  dapurUnitId String?
+
+  stok   Stok?   @relation(fields: [stokId], references: [id], onDelete: SetNull)
+  stokId String?
+
+  itemName     String
+  unit         String
+  category     StokCategory @default(BAHAN)
+  beforeQty    Float
+  afterQty     Float
+  difference   Float
+  note         String?
+  opnameAt     DateTime     @default(now())
+
+  performedBy   User   @relation("StokOpnameBy", fields: [performedById], references: [id])
+  performedById String
+
+  createdAt DateTime @default(now())
+
+  @@index([dapurUnitId])
+  @@index([stokId])
+  @@index([performedById])
+  @@index([opnameAt])
 }
 
 model PurchaseOrder {

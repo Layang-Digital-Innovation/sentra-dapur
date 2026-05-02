@@ -34,7 +34,8 @@ export default function HPPEstimationPage() {
   }, [dapur, year, month]);
 
   useEffect(() => {
-    if (user?.user.role !== "ADMIN_DAPUR" && user?.user.role !== "PRODUKSI") {
+    const allowedRoles = ["ADMIN_DAPUR", "AKUNTAN", "PRODUKSI", "AHLI_GIZI", "CHEF"];
+    if (!allowedRoles.includes(user?.user.role || "")) {
       router.replace("/dashboard");
       return;
     }

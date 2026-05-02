@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Report, ReportType, Project } from "@/types/investment.types";
 import investmentService from "@/services/investment.service";
+import { dapurService } from "@/services/dapur.service";
 import { fileUploadService } from "@/services/fileUploadService";
 import { FiFileText, FiRefreshCcw, FiSearch } from "react-icons/fi";
 
@@ -101,7 +102,54 @@ const InvestorReportsPage: React.FC = () => {
         })
       );
 
-      const combined = results.flat();
+      // 2. Fetch Dapur Portfolio & Laba Rugi
+      let dapurLabaRugiReports: any[] = [];
+      try {
+        const dapurPortfolio = await investmentService.getDapurPortfolio();
+        const dapurMap = new Map<string, any>();
+        
+        // Asumsi struktur dapurPortfolio mengembalikan array dapur yang diinvestasikan
+        const dapurItems = Array.isArray(dapurPortfolio) ? dapurPortfolio : (dapurPortfolio.investments || dapurPortfolio.data || []);
+        
+        dapurItems.forEach((item: any) => {
+          const dapur = item.dapurUnit || item.dapur;
+          if (dapur && dapur.id) {
+            dapurMap.set(dapur.id, dapur);
+          }
+        });
+        
+        const dapurIds = Array.from(dapurMap.keys());
+        
+        if (dapurIds.length > 0) {
+          const dapurResults = await Promise.all(
+            dapurIds.map(async (did) => {
+              try {
+                const res = await dapurService.getPublishedLabaRugi(did);
+                // Map Laba Rugi Dapur ke struktur Report
+                return res.map((r: any) => ({
+                  id: r.id,
+                  type: ReportType.INCOME_STATEMENT,
+                  fileUrl: "", // Laba rugi dapur menggunakan UI, bukan file. Tampilkan ID atau link custom
+                  projectId: did, // Pinjam field projectId untuk menyimpan dapurId
+                  project: { id: did, title: `Dapur: ${dapurMap.get(did)?.name || 'Unknown'}` }, // Mock project object
+                  createdAt: new Date(r.publishedAt || r.createdAt),
+                  isDapurLabaRugi: true,
+                  period: r.period,
+                  netProfit: r.netProfit
+                }));
+              } catch (e) {
+                console.warn(`Gagal mengambil laba rugi untuk dapur ${did}`, e);
+                return [];
+              }
+            })
+          );
+          dapurLabaRugiReports = dapurResults.flat();
+        }
+      } catch (err) {
+        console.warn("Gagal memuat portofolio dapur:", err);
+      }
+
+      const combined = [...results.flat(), ...dapurLabaRugiReports];
       // Urutkan terbaru dulu
       combined.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       setReports(combined);
@@ -272,12 +320,21 @@ const InvestorReportsPage: React.FC = () => {
                       {formatDateID(report.createdAt)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-                      <button
-                        onClick={() => fileUploadService.downloadFile(report.fileUrl, `${report.project?.title || 'report'}-${report.type}.pdf`)}
-                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
-                      >
-                        <FiFileText className="h-4 w-4" /> Buka / Unduh
-                      </button>
+                      {(report as any).isDapurLabaRugi ? (
+                        <div className="flex flex-col items-end">
+                          <span className={`font-semibold ${(report as any).netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format((report as any).netProfit)}
+                          </span>
+                          <span className="text-xs text-gray-500">Periode: {(report as any).period}</span>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => fileUploadService.downloadFile(report.fileUrl, `${report.project?.title || 'report'}-${report.type}.pdf`)}
+                          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+                        >
+                          <FiFileText className="h-4 w-4" /> Buka / Unduh
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

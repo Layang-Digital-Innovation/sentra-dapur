@@ -13,7 +13,8 @@ export default function AdminDapurDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (user?.user.role !== "ADMIN_DAPUR" && user?.user.role !== "PROJECT_OWNER") {
+    const allowedRoles = ["ADMIN_DAPUR", "AKUNTAN", "PROJECT_OWNER"];
+    if (!allowedRoles.includes(user?.user.role || "")) {
       router.replace("/dashboard");
       return;
     }

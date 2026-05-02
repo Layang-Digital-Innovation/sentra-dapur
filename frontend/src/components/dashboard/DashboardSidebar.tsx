@@ -34,7 +34,9 @@ import {
   FiCalendar,
   FiBook,
   FiClipboard,
-  FiBox
+  FiBox,
+  FiList,
+  FiLayers,
 } from 'react-icons/fi';
 import { subscriptionService } from '@/services/subscription.service';
 import chatService from '@/services/chat.service';
@@ -103,6 +105,18 @@ const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
   const toggleSubmenu = (name: string) => {
     setOpenSubmenus(prev => ({ ...prev, [name]: !prev[name] }));
   };
+
+  useEffect(() => {
+    if (
+      pathname?.startsWith('/dashboard/admin-pusat/approvals') ||
+      pathname?.startsWith('/dashboard/admin-pusat/transaksi/')
+    ) {
+      setOpenSubmenus((prev) => ({ ...prev, Transaksi: true }));
+    }
+    if (pathname?.startsWith('/dashboard/admin-pusat/buku-kas/')) {
+      setOpenSubmenus((prev) => ({ ...prev, 'Buku Kas': true }));
+    }
+  }, [pathname]);
 
   // Handle scroll indicators
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -223,6 +237,11 @@ const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
         ...commonLinks,
         { name: 'Dashboard PO', href: '/dashboard/project-owner', icon: <FiHome className="mr-3 h-5 w-5" /> },
         { name: 'Approval Transaksi', href: '/dashboard/admin-pusat/approvals', icon: <FiUserCheck className="mr-3 h-5 w-5" /> },
+        {
+          name: 'Persetujuan Ubah Kas',
+          href: '/dashboard/project-owner/kas-pending',
+          icon: <FiDollarSign className="mr-3 h-5 w-5" />,
+        },
         { name: 'Admin Pusat', href: '/dashboard/project-owner/admin-pusat', icon: <FiUsers className="mr-3 h-5 w-5" /> },
         { name: 'Data Dapur', href: '/dashboard/project-owner/dapur', icon: <FiFolder className="mr-3 h-5 w-5" /> },
         { name: 'Dividen & Laba', href: '/dashboard/project-owner/dividen', icon: <FiFileText className="mr-3 h-5 w-5" /> },
@@ -233,7 +252,22 @@ const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
       return [
         ...commonLinks,
         { name: 'Dashboard Pusat', href: '/dashboard/admin-pusat', icon: <FiActivity className="mr-3 h-5 w-5" /> },
-        { name: 'Approval Transaksi', href: '/dashboard/admin-pusat/approvals', icon: <FiUserCheck className="mr-3 h-5 w-5" /> },
+        {
+          name: 'Transaksi',
+          icon: <FiDollarSign className="mr-3 h-5 w-5" />,
+          subLinks: [
+            { name: 'Approval Transaksi', href: '/dashboard/admin-pusat/approvals', icon: <FiUserCheck className="mr-2 h-4 w-4" /> },
+            { name: 'Riwayat Transaksi', href: '/dashboard/admin-pusat/transaksi/riwayat', icon: <FiList className="mr-2 h-4 w-4" /> },
+          ],
+        },
+        {
+          name: 'Buku Kas',
+          icon: <FiLayers className="mr-3 h-5 w-5" />,
+          subLinks: [
+            { name: 'Kas Dapur', href: '/dashboard/admin-pusat/buku-kas/dapur', icon: <FiHome className="mr-2 h-4 w-4" /> },
+          ],
+        },
+        { name: 'Laba Rugi', href: '/dashboard/admin-pusat/laba-rugi', icon: <FiPieChart className="mr-3 h-5 w-5" /> },
         { name: 'Chat', href: '/dashboard/chat', icon: <FiMessageCircle className="mr-3 h-5 w-5" />, badge: chatUnreadCount > 0 ? <NotificationBadge count={chatUnreadCount} size="sm" /> : null },
         { name: 'Unit Dapur', href: '/dashboard/admin-pusat/dapur', icon: <FiFolder className="mr-3 h-5 w-5" /> },
         { name: 'Manajemen User', href: '/dashboard/admin-pusat/users', icon: <FiUsers className="mr-3 h-5 w-5" /> },
@@ -277,7 +311,44 @@ const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
             { name: 'Invoice & Pembayaran', href: '/dashboard/admin-dapur/po/invoices', icon: <FiArrowRight className="mr-2 h-4 w-4" /> },
           ]
         },
-        { name: 'Tim Produksi', href: '/dashboard/admin-dapur/produksi', icon: <FiUsers className="mr-3 h-5 w-5" /> },
+        { name: 'Manajemen Tim', href: '/dashboard/admin-dapur/produksi', icon: <FiUsers className="mr-3 h-5 w-5" /> },
+        { name: 'Laporan Keuangan', href: '/dashboard/admin-dapur/laporan', icon: <FiClipboard className="mr-3 h-5 w-5" /> },
+        { name: 'Settings', href: '/dashboard/settings', icon: <FiSettings className="mr-3 h-5 w-5" /> },
+      ];
+    } else if (userRole === 'AKUNTAN') {
+      return [
+        ...commonLinks,
+        { name: 'Dashboard Dapur', href: '/dashboard/admin-dapur', icon: <FiHome className="mr-3 h-5 w-5" /> },
+        { name: 'Chat', href: '/dashboard/chat', icon: <FiMessageCircle className="mr-3 h-5 w-5" />, badge: chatUnreadCount > 0 ? <NotificationBadge count={chatUnreadCount} size="sm" /> : null },
+        {
+          name: 'Buku Kas',
+          icon: <FiDollarSign className="mr-3 h-5 w-5" />,
+          subLinks: [
+            { name: 'Kas Umum', href: '/dashboard/admin-dapur/arus-kas/umum', icon: <FiArrowRight className="mr-2 h-4 w-4" /> },
+            { name: 'Kas Pembantu', href: '/dashboard/admin-dapur/arus-kas/pembantu', icon: <FiArrowRight className="mr-2 h-4 w-4" /> },
+          ]
+        },
+        {
+          name: 'Gudang',
+          icon: <FiPackage className="mr-3 h-5 w-5" />,
+          subLinks: [
+            { name: 'Gudang Bahan', href: '/dashboard/admin-dapur/gudang/bahan', icon: <FiArrowRight className="mr-2 h-4 w-4" /> },
+            { name: 'Gudang Lain-lain', href: '/dashboard/admin-dapur/gudang/lain', icon: <FiArrowRight className="mr-2 h-4 w-4" /> },
+          ]
+        },
+        { name: 'Master Menu', href: '/dashboard/admin-dapur/menu', icon: <FiBook className="mr-3 h-5 w-5" /> },
+        { name: 'Penjadwalan Menu', href: '/dashboard/admin-dapur/kalender', icon: <FiCalendar className="mr-3 h-5 w-5" /> },
+        {
+          name: 'Purchase Order',
+          icon: <FiShoppingBag className="mr-3 h-5 w-5" />,
+          subLinks: [
+            { name: 'PO Automation', href: '/dashboard/admin-dapur/kalkulasi', icon: <FiArrowRight className="mr-2 h-4 w-4" /> },
+            { name: 'Estimasi HPP', href: '/dashboard/admin-dapur/hpp', icon: <FiArrowRight className="mr-2 h-4 w-4" /> },
+            { name: 'List PO', href: '/dashboard/admin-dapur/po', icon: <FiArrowRight className="mr-2 h-4 w-4" /> },
+            { name: 'Invoice & Pembayaran', href: '/dashboard/admin-dapur/po/invoices', icon: <FiArrowRight className="mr-2 h-4 w-4" /> },
+          ]
+        },
+        { name: 'Manajemen Tim', href: '/dashboard/admin-dapur/produksi', icon: <FiUsers className="mr-3 h-5 w-5" /> },
         { name: 'Laporan Keuangan', href: '/dashboard/admin-dapur/laporan', icon: <FiClipboard className="mr-3 h-5 w-5" /> },
         { name: 'Settings', href: '/dashboard/settings', icon: <FiSettings className="mr-3 h-5 w-5" /> },
       ];
@@ -291,6 +362,28 @@ const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
         { name: 'Estimasi HPP', href: '/dashboard/admin-dapur/hpp', icon: <FiDollarSign className="mr-3 h-5 w-5" /> },
         { name: 'Stok Bahan Baku', href: '/dashboard/admin-dapur/stok', icon: <FiPackage className="mr-3 h-5 w-5" /> },
         { name: 'Settings', href: '/dashboard/settings', icon: <FiSettings className="mr-3 h-5 w-5" /> },
+      ];
+    } else if (userRole === 'AHLI_GIZI' || userRole === 'CHEF') {
+      return [
+        ...commonLinks,
+        { name: 'Dashboard', href: '/dashboard/produksi', icon: <FiHome className="mr-3 h-5 w-5" /> },
+        { name: 'Master Menu', href: '/dashboard/admin-dapur/menu', icon: <FiBook className="mr-3 h-5 w-5" /> },
+        { name: 'Penjadwalan Menu', href: '/dashboard/admin-dapur/kalender', icon: <FiCalendar className="mr-3 h-5 w-5" /> },
+        { name: 'Kalkulasi PO', href: '/dashboard/admin-dapur/kalkulasi', icon: <FiClipboard className="mr-3 h-5 w-5" /> },
+        { name: 'Stok Bahan Baku', href: '/dashboard/admin-dapur/stok', icon: <FiPackage className="mr-3 h-5 w-5" /> },
+        { name: 'Settings', href: '/dashboard/settings', icon: <FiSettings className="mr-3 h-5 w-5" /> },
+      ];
+    } else if (userRole === 'GUDANG') {
+      return [
+        ...commonLinks,
+        {
+          name: 'Gudang',
+          icon: <FiPackage className="mr-3 h-5 w-5" />,
+          subLinks: [
+            { name: 'Gudang Bahan', href: '/dashboard/admin-dapur/gudang/bahan', icon: <FiArrowRight className="mr-2 h-4 w-4" /> },
+            { name: 'Gudang Lain-lain', href: '/dashboard/admin-dapur/gudang/lain', icon: <FiArrowRight className="mr-2 h-4 w-4" /> },
+          ]
+        },
       ];
     } else {
       return [
@@ -342,6 +435,21 @@ const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
     } else if (role === 'ADMIN_PUSAT') {
       dashboardLinks = [
         { name: 'Dashboard Pusat', href: '/dashboard/admin-pusat', icon: <FiActivity className="mr-3 h-5 w-5" /> },
+        {
+          name: 'Transaksi',
+          icon: <FiDollarSign className="mr-3 h-5 w-5" />,
+          subLinks: [
+            { name: 'Approval Transaksi', href: '/dashboard/admin-pusat/approvals', icon: <FiUserCheck className="mr-2 h-4 w-4" /> },
+            { name: 'Riwayat Transaksi', href: '/dashboard/admin-pusat/transaksi/riwayat', icon: <FiList className="mr-2 h-4 w-4" /> },
+          ],
+        },
+        {
+          name: 'Buku Kas',
+          icon: <FiLayers className="mr-3 h-5 w-5" />,
+          subLinks: [
+            { name: 'Kas Dapur', href: '/dashboard/admin-pusat/buku-kas/dapur', icon: <FiHome className="mr-2 h-4 w-4" /> },
+          ],
+        },
         { name: 'Unit Dapur', href: '/dashboard/admin-pusat/dapur', icon: <FiFolder className="mr-3 h-5 w-5" /> },
         { name: 'Purchase Orders', href: '/dashboard/admin-pusat/po', icon: <FiShoppingBag className="mr-3 h-5 w-5" /> },
       ];
@@ -512,10 +620,26 @@ const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
   };
 
   const isActiveLink = (href: string) => {
-    if (href === '/dashboard') {
-      return pathname === '/dashboard';
+    if (!pathname) return false;
+    
+    // Base dashboard paths that should only match exactly to prevent highlighting when in sub-menus
+    const exactMatchPaths = [
+      '/dashboard',
+      '/dashboard/super-admin',
+      '/dashboard/admin',
+      '/dashboard/admin/trading',
+      '/dashboard/investment',
+      '/dashboard/project-owner',
+      '/dashboard/admin-pusat',
+      '/dashboard/admin-dapur',
+      '/dashboard/produksi'
+    ];
+    
+    if (exactMatchPaths.includes(href)) {
+      return pathname === href;
     }
-    return pathname ? pathname.startsWith(href) : false;
+    
+    return pathname === href || pathname.startsWith(`${href}/`);
   };
 
   return (
@@ -562,7 +686,7 @@ const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
                     const active = isActiveLink(item.href) || isAnySubActive;
 
                     return (
-                      <div key={`${item.name}-${item.href}`} className={`relative group ${isCollapsed ? 'nav-item' : ''}`}>
+                      <div key={item.href ? `${item.name}-${item.href}` : item.name} className={`relative group ${isCollapsed ? 'nav-item' : ''}`}>
                         {hasSubLinks ? (
                           <>
                             <button

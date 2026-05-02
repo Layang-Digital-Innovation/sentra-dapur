@@ -31,6 +31,22 @@ export interface DapurUnit {
   createdAt: string;
 }
 
+export interface StokOpnameLog {
+  id: string;
+  dapurUnitId?: string;
+  stokId?: string;
+  itemName: string;
+  unit: string;
+  category: 'BAHAN' | 'LAIN';
+  beforeQty: number;
+  afterQty: number;
+  difference: number;
+  note?: string | null;
+  opnameAt: string;
+  performedBy?: { id: string; fullname?: string; email: string };
+  createdAt: string;
+}
+
 class DapurService {
   private async getAuthHeaders(): Promise<HeadersInit> {
     const userStr = localStorage.getItem('user');
@@ -49,11 +65,37 @@ class DapurService {
   }
 
   private async handleResponse<T>(response: Response): Promise<T> {
+    const text = await response.text();
+    const trimmed = text?.trim() ?? '';
+
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      let errorData: Record<string, unknown> = {};
+      if (trimmed) {
+        try {
+          errorData = JSON.parse(trimmed) as Record<string, unknown>;
+        } catch {
+          errorData = { message: trimmed };
+        }
+      }
+      const raw = errorData.message;
+      const msg =
+        Array.isArray(raw)
+          ? raw.map(String).join(' ')
+          : typeof raw === 'string'
+            ? raw
+            : `HTTP error! status: ${response.status}`;
+      throw new Error(msg);
     }
-    return response.json();
+
+    if (!trimmed) {
+      return null as T;
+    }
+
+    try {
+      return JSON.parse(trimmed) as T;
+    } catch {
+      throw new Error('Invalid JSON response from server');
+    }
   }
 
   async getMyDapur(): Promise<DapurUnit[]> {
@@ -78,6 +120,23 @@ class DapurService {
       method: 'POST',
       headers: await this.getAuthHeaders(),
       body: JSON.stringify({ adminDapurId }),
+    });
+    return this.handleResponse(response);
+  }
+
+  async updateDapur(id: string, data: { name?: string; location?: string }) {
+    const response = await fetch(`${API_BASE_URL}/dapur/${id}`, {
+      method: 'PUT',
+      headers: await this.getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(response);
+  }
+
+  async deleteDapur(id: string) {
+    const response = await fetch(`${API_BASE_URL}/dapur/${id}`, {
+      method: 'DELETE',
+      headers: await this.getAuthHeaders(),
     });
     return this.handleResponse(response);
   }
@@ -133,6 +192,35 @@ class DapurService {
     return this.handleResponse(response);
   }
 
+  async proposeArusKasPendingEdit(
+    id: string,
+    body: {
+      type: 'IN' | 'OUT';
+      bookType: 'UMUM' | 'PEMBANTU';
+      amount: number;
+      description: string;
+      referenceNo?: string;
+      evidenceUrl?: string;
+      transactionDate?: string;
+      items?: { name: string; quantity: number; unit?: string; pricePerUnit?: number; total?: number }[];
+    },
+  ) {
+    const response = await fetch(`${API_BASE_URL}/dapur/arus-kas/${id}/pending-edit`, {
+      method: 'PUT',
+      headers: await this.getAuthHeaders(),
+      body: JSON.stringify(body),
+    });
+    return this.handleResponse(response);
+  }
+
+  async requestDeleteArusKas(id: string) {
+    const response = await fetch(`${API_BASE_URL}/dapur/arus-kas/${id}/request-delete`, {
+      method: 'PUT',
+      headers: await this.getAuthHeaders(),
+    });
+    return this.handleResponse(response);
+  }
+
   async updateStok(dapurId: string, data: { itemName: string; quantity: number; unit: string }) {
     const response = await fetch(`${API_BASE_URL}/dapur/${dapurId}/stok`, {
       method: 'POST',
@@ -140,6 +228,27 @@ class DapurService {
       body: JSON.stringify(data),
     });
     return this.handleResponse(response);
+  }
+
+  async createStokOpname(
+    dapurId: string,
+    data: { itemName: string; unit: string; category?: 'BAHAN' | 'LAIN'; physicalQty: number; note?: string }
+  ) {
+    const response = await fetch(`${API_BASE_URL}/dapur/${dapurId}/stok-opname`, {
+      method: 'POST',
+      headers: await this.getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse<{ stok: any; log: StokOpnameLog }>(response);
+  }
+
+  async getStokOpnameHistory(category?: string) {
+    const url = category ? `${API_BASE_URL}/dapur/stok-opname/history?category=${category}` : `${API_BASE_URL}/dapur/stok-opname/history`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: await this.getAuthHeaders(),
+    });
+    return this.handleResponse<StokOpnameLog[]>(response);
   }
 
   async createPO(dapurId: string, items: { productName: string; quantity: number; unit?: string; supplierName?: string; pricePerUnit?: number }[], type: string = 'BAHAN') {
@@ -298,6 +407,34 @@ class DapurService {
 
   async getCashbacks(dapurId: string) {
     const response = await fetch(`${API_BASE_URL}/dapur/${dapurId}/cashbacks`, {
+      method: 'GET',
+      headers: await this.getAuthHeaders(),
+    });
+    return this.handleResponse<any[]>(response);
+  }
+  // ============================================
+  // LABA RUGI (PROFIT & LOSS)
+  // ============================================
+
+  async calculateLabaRugi(dapurId: string, period: string) {
+    const response = await fetch(`${API_BASE_URL}/dapur/${dapurId}/laba-rugi/calculate?period=${period}`, {
+      method: 'GET',
+      headers: await this.getAuthHeaders(),
+    });
+    return this.handleResponse<any>(response);
+  }
+
+  async publishLabaRugi(dapurId: string, period: string) {
+    const response = await fetch(`${API_BASE_URL}/dapur/${dapurId}/laba-rugi/publish`, {
+      method: 'POST',
+      headers: await this.getAuthHeaders(),
+      body: JSON.stringify({ period }),
+    });
+    return this.handleResponse<any>(response);
+  }
+
+  async getPublishedLabaRugi(dapurId: string) {
+    const response = await fetch(`${API_BASE_URL}/dapur/${dapurId}/laba-rugi/published`, {
       method: 'GET',
       headers: await this.getAuthHeaders(),
     });

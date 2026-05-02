@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { dapurService, DapurUnit } from "@/services/dapur.service";
 import { FiActivity, FiFolder, FiDollarSign, FiArrowUpRight, FiArrowDownRight } from "react-icons/fi";
+import toast from "react-hot-toast";
 
 export default function AdminPusatDashboard() {
   const { user } = useAuth();
@@ -24,6 +25,8 @@ export default function AdminPusatDashboard() {
         setDapurList(data);
       } catch (err) {
         console.error(err);
+        const msg = err instanceof Error ? err.message : "Gagal memuat data dapur";
+        toast.error(msg);
       } finally {
         setLoading(false);
       }

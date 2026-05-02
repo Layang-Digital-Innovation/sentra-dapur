@@ -12,6 +12,10 @@ const R = {
   ADMIN_PUSAT:   'ADMIN_PUSAT'   as Role,
   ADMIN_DAPUR:   'ADMIN_DAPUR'   as Role,
   PRODUKSI:      'PRODUKSI'      as Role,
+  AKUNTAN:       'AKUNTAN'       as Role,
+  AHLI_GIZI:     'AHLI_GIZI'     as Role,
+  CHEF:          'CHEF'          as Role,
+  GUDANG:        'GUDANG'        as Role,
   INVESTOR:      'INVESTOR'      as Role,
   ADMIN:         'ADMIN'         as Role,
   SUPPLIER:      'SUPPLIER'      as Role,
@@ -71,7 +75,7 @@ export class UsersController {
   // ─── SUPER_ADMIN / PROJECT_OWNER / ADMIN_PUSAT / ADMIN_DAPUR user management ─
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(R.SUPER_ADMIN, R.PROJECT_OWNER, R.ADMIN_PUSAT, R.ADMIN_DAPUR, R.PRODUKSI)
+  @Roles(R.SUPER_ADMIN, R.PROJECT_OWNER, R.ADMIN_PUSAT, R.ADMIN_DAPUR, R.PRODUKSI, R.AKUNTAN, R.AHLI_GIZI, R.CHEF, R.GUDANG)
   async getAllUsers(
     @Request() req,
     @Query('page') page?: string,
@@ -99,14 +103,14 @@ export class UsersController {
         role: filteredRole,
       });
     }
-    if (req.user.role === R.ADMIN_DAPUR || req.user.role === R.PRODUKSI) {
-      const allowedRoles: Role[] = [R.PRODUKSI, R.SUPPLIER];
+    if (req.user.role === R.ADMIN_DAPUR) {
+      const allowedRoles: Role[] = [R.PRODUKSI, R.AKUNTAN, R.AHLI_GIZI, R.CHEF, R.GUDANG, R.SUPPLIER];
       const filteredRole = role && allowedRoles.includes(role) ? role : undefined;
       return this.usersService.findAll({
         page: page ? parseInt(page) : 1,
         limit: limit ? parseInt(limit) : 50,
         search,
-        role: filteredRole || (req.user.role === R.ADMIN_DAPUR ? R.PRODUKSI : R.SUPPLIER), // Default check
+        role: filteredRole,
       });
     }
     return this.usersService.findAll({
@@ -136,9 +140,18 @@ export class UsersController {
       }
       return this.usersService.create({ ...data, fullname: data.fullName });
     }
-    // ADMIN_DAPUR can only create PRODUKSI accounts
+    // ADMIN_DAPUR can only create team management roles
     if (req.user.role === R.ADMIN_DAPUR) {
-      return this.usersService.create({ ...data, fullname: data.fullName, role: R.PRODUKSI });
+      const allowedRoles: Role[] = [R.PRODUKSI, R.AKUNTAN, R.AHLI_GIZI, R.CHEF, R.GUDANG];
+      if (!allowedRoles.includes(data.role)) {
+        throw new ForbiddenException('Admin Dapur hanya dapat membuat akun Produksi, Akuntan, Ahli Gizi, Chef, atau Gudang');
+      }
+      const subscriptionId = await this.usersService.getSubscriptionIdForUser(req.user.id);
+      return this.usersService.create({
+        ...data,
+        fullname: data.fullName,
+        ...(subscriptionId ? { subscriptionId } : {}),
+      });
     }
     return this.usersService.create({ ...data, fullname: data.fullName });
   }
@@ -167,7 +180,9 @@ export class UsersController {
       if (!allowed.includes(target.role as Role)) throw new ForbiddenException('Tidak diizinkan mengubah akun role ini');
     }
     if (req.user.role === R.ADMIN_DAPUR) {
-      if (target.role !== R.PRODUKSI) throw new ForbiddenException('Admin Dapur hanya dapat mengubah akun Produksi');
+      const allowed: Role[] = [R.PRODUKSI, R.AKUNTAN, R.AHLI_GIZI, R.CHEF, R.GUDANG];
+      if (!allowed.includes(target.role as Role)) throw new ForbiddenException('Admin Dapur hanya dapat mengubah akun Produksi, Akuntan, Ahli Gizi, Chef, atau Gudang');
+      if (data.role && !allowed.includes(data.role as Role)) throw new ForbiddenException('Perubahan role tidak diizinkan untuk akun tim dapur');
     }
     return this.usersService.update(id, { ...data, fullname: data.fullName });
   }
@@ -188,7 +203,8 @@ export class UsersController {
       if (!allowed.includes(target.role as Role)) throw new ForbiddenException('Tidak diizinkan menghapus akun role ini');
     }
     if (req.user.role === R.ADMIN_DAPUR) {
-      if (target.role !== R.PRODUKSI) throw new ForbiddenException('Admin Dapur hanya dapat menghapus akun Produksi');
+      const allowed: Role[] = [R.PRODUKSI, R.AKUNTAN, R.AHLI_GIZI, R.CHEF, R.GUDANG];
+      if (!allowed.includes(target.role as Role)) throw new ForbiddenException('Admin Dapur hanya dapat menghapus akun Produksi, Akuntan, Ahli Gizi, Chef, atau Gudang');
     }
     return this.usersService.delete(id);
   }

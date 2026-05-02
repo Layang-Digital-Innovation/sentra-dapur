@@ -93,6 +93,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         router.push('/dashboard/admin-pusat');
       } else if (role === 'ADMIN_DAPUR') {
         router.push('/dashboard/admin-dapur');
+      } else if (role === 'AKUNTAN') {
+        router.push('/dashboard/admin-dapur');
+      } else if (role === 'PRODUKSI' || role === 'AHLI_GIZI' || role === 'CHEF') {
+        router.push('/dashboard/produksi');
+      } else if (role === 'GUDANG') {
+        router.push('/dashboard/admin-dapur/gudang/bahan');
       } else {
         router.push('/dashboard');
       }

@@ -15,7 +15,13 @@ const getDashboardUrl = (role: Role): string => {
     case Role.ADMIN_DAPUR:
       return '/dashboard/admin-dapur';
     case Role.PRODUKSI:
+    case Role.AHLI_GIZI:
+    case Role.CHEF:
       return '/dashboard/produksi';
+    case Role.AKUNTAN:
+      return '/dashboard/admin-dapur';
+    case Role.GUDANG:
+      return '/dashboard/admin-dapur/gudang/bahan';
     case Role.SUPPLIER:
       return '/dashboard/supplier';
     case Role.SUPER_ADMIN:

@@ -132,6 +132,25 @@ export default function BottomNav() {
       { name: 'Jadwal', href: '/dashboard/admin-dapur/kalender', icon: <FiCalendar className="h-5 w-5" /> },
       { name: 'PO', href: '/dashboard/admin-dapur/kalkulasi', icon: <FiClipboard className="h-5 w-5" /> },
     ];
+  } else if (role === 'AHLI_GIZI' || role === 'CHEF') {
+    items = [
+      { name: 'Beranda', href: '/dashboard/produksi', icon: <FiHome className="h-5 w-5" /> },
+      { name: 'Menu', href: '/dashboard/admin-dapur/menu', icon: <FiBook className="h-5 w-5" /> },
+      { name: 'Jadwal', href: '/dashboard/admin-dapur/kalender', icon: <FiCalendar className="h-5 w-5" /> },
+      { name: 'PO', href: '/dashboard/admin-dapur/kalkulasi', icon: <FiClipboard className="h-5 w-5" /> },
+    ];
+  } else if (role === 'AKUNTAN') {
+    items = [
+      { name: 'Beranda', href: '/dashboard/admin-dapur', icon: <FiHome className="h-5 w-5" /> },
+      { name: 'Kas', href: '/dashboard/admin-dapur/arus-kas/umum', icon: <FiDollarSign className="h-5 w-5" /> },
+      { name: 'Menu', href: '/dashboard/admin-dapur/menu', icon: <FiBook className="h-5 w-5" /> },
+      { name: 'PO', href: '/dashboard/admin-dapur/po', icon: <FiShoppingBag className="h-5 w-5" /> },
+    ];
+  } else if (role === 'GUDANG') {
+    items = [
+      { name: 'Bahan', href: '/dashboard/admin-dapur/gudang/bahan', icon: <FiPackage className="h-5 w-5" /> },
+      { name: 'Lain-lain', href: '/dashboard/admin-dapur/gudang/lain', icon: <FiPackage className="h-5 w-5" /> },
+    ];
   } else if (role === 'PROJECT_OWNER') {
     items = [
       { name: 'Project', href: '/dashboard/project-owner', icon: <FiHome className="h-5 w-5" /> },
@@ -161,7 +180,7 @@ export default function BottomNav() {
       className="md:hidden fixed bottom-0 inset-x-0 z-[80] border-t shadow-sm backdrop-blur bg-white/90"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
-      <nav className="grid grid-cols-4 gap-0 py-2">
+      <nav className={`grid ${items.length <= 2 ? 'grid-cols-2' : 'grid-cols-4'} gap-0 py-2`}>
         {items.map((item) => {
           const active = pathname ? pathname.startsWith(item.href) : false;
           return (

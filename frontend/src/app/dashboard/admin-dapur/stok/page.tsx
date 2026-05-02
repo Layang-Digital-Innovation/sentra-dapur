@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { 
   FiPackage, 
   FiTruck, 
@@ -16,7 +16,9 @@ import {
   FiArrowDown,
   FiBox
 } from "react-icons/fi";
-import { dapurService } from "@/services/dapur.service";
+import { dapurService, StokOpnameLog } from "@/services/dapur.service";
+import { useAuth } from "@/contexts/AuthContext";
+import { useRouter } from "next/navigation";
 
 interface StokItem {
   id: string;
@@ -42,13 +44,25 @@ interface PurchaseOrder {
   updatedAt: string;
 }
 
+interface OpnameForm {
+  itemName: string;
+  unit: string;
+  systemQty: number;
+  physicalQty: number;
+  notes: string;
+}
+
 export default function AdminDapurStokPage({ category }: { category?: "BAHAN" | "LAIN" }) {
-  const [activeTab, setActiveTab] = useState<"inventory" | "loading" | "history">("inventory");
+  const { user } = useAuth();
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState<"inventory" | "loading" | "history" | "opname">("inventory");
   const [stok, setStok] = useState<StokItem[]>([]);
   const [incomingPOs, setIncomingPOs] = useState<PurchaseOrder[]>([]);
   const [receptionHistory, setReceptionHistory] = useState<any[]>([]);
+  const [opnameHistory, setOpnameHistory] = useState<StokOpnameLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [bahanLabelFilter, setBahanLabelFilter] = useState<"ALL" | "BASAH" | "KERING">("ALL");
   
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -67,18 +81,32 @@ export default function AdminDapurStokPage({ category }: { category?: "BAHAN" | 
     }[];
   }>({ notes: "", items: [] });
   const [submitting, setSubmitting] = useState(false);
+  const [dapurUnitId, setDapurUnitId] = useState<string | null>(null);
+  const [opnameOpen, setOpnameOpen] = useState(false);
+  const [opnameSaving, setOpnameSaving] = useState(false);
+  const [opnameForm, setOpnameForm] = useState<OpnameForm>({
+    itemName: "",
+    unit: "",
+    systemQty: 0,
+    physicalQty: 0,
+    notes: "",
+  });
 
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [stokRes, poRes, receptionHistoryRes] = await Promise.all([
+      const [stokRes, poRes, receptionHistoryRes, opnameRes, unitRes] = await Promise.all([
         dapurService.getMyStok(category),
         dapurService.getIncomingPOs(),
-        dapurService.getLoadingHistory()
+        dapurService.getLoadingHistory(),
+        dapurService.getStokOpnameHistory(category),
+        dapurService.getMyUnit(),
       ]);
       setStok(stokRes);
       setIncomingPOs(poRes);
       setReceptionHistory(receptionHistoryRes);
+      setOpnameHistory(opnameRes);
+      setDapurUnitId(unitRes?.id || null);
     } catch (error) {
       console.error("Gagal mengambil data stok:", error);
     } finally {
@@ -87,8 +115,16 @@ export default function AdminDapurStokPage({ category }: { category?: "BAHAN" | 
   };
 
   useEffect(() => {
+    const role = user?.user.role || "";
+    const gudangOnly = ["GUDANG"];
+    const generalWarehouse = ["ADMIN_DAPUR", "AKUNTAN", "PRODUKSI", "AHLI_GIZI", "CHEF"];
+    const allowedRoles = category ? [...gudangOnly, ...generalWarehouse] : generalWarehouse;
+    if (!allowedRoles.includes(role)) {
+      router.replace("/dashboard");
+      return;
+    }
     fetchData();
-  }, []);
+  }, [user, category, router]);
 
   const openReceiveModal = (po: PurchaseOrder) => {
     setSelectedPO(po);
@@ -131,9 +167,65 @@ export default function AdminDapurStokPage({ category }: { category?: "BAHAN" | 
     }
   };
 
-  const filteredStok = stok.filter(item => 
-    item.itemName.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const openOpnameModal = (item: StokItem) => {
+    setOpnameForm({
+      itemName: item.itemName,
+      unit: item.unit,
+      systemQty: item.quantity,
+      physicalQty: item.quantity,
+      notes: "",
+    });
+    setOpnameOpen(true);
+  };
+
+  const submitOpname = async () => {
+    if (!dapurUnitId) {
+      alert("Dapur unit tidak ditemukan.");
+      return;
+    }
+    try {
+      setOpnameSaving(true);
+      const result = await dapurService.createStokOpname(dapurUnitId, {
+        itemName: opnameForm.itemName,
+        physicalQty: opnameForm.physicalQty,
+        unit: opnameForm.unit,
+        category: category || "BAHAN",
+        note: opnameForm.notes || undefined,
+      });
+      setOpnameOpen(false);
+      await fetchData();
+      const diff = result?.log?.difference ?? (opnameForm.physicalQty - opnameForm.systemQty);
+      alert(`Stok opname berhasil disimpan. Selisih: ${diff > 0 ? "+" : ""}${diff.toLocaleString("id-ID")} ${opnameForm.unit}`);
+    } catch (error) {
+      console.error("Gagal menyimpan stok opname:", error);
+      alert("Gagal menyimpan stok opname.");
+    } finally {
+      setOpnameSaving(false);
+    }
+  };
+
+  const getBahanLabel = (itemName: string): "BASAH" | "KERING" => {
+    const name = itemName.toLowerCase();
+    const wetKeywords = [
+      "ayam", "ikan", "daging", "udang", "susu", "telur", "tahu", "tempe",
+      "sayur", "bayam", "kangkung", "wortel", "kol", "sawi", "cabai", "tomat",
+      "bawang", "kentang", "buah", "pisang", "apel",
+    ];
+    return wetKeywords.some((kw) => name.includes(kw)) ? "BASAH" : "KERING";
+  };
+
+  const filteredStok = stok.filter((item) => {
+    const matchSearch = item.itemName.toLowerCase().includes(searchQuery.toLowerCase());
+    if (!matchSearch) return false;
+    if (category !== "BAHAN" || bahanLabelFilter === "ALL") return true;
+    return getBahanLabel(item.itemName) === bahanLabelFilter;
+  });
+
+  const bahanCounts = useMemo(() => {
+    if (category !== "BAHAN") return { basah: 0, kering: 0 };
+    const basah = stok.filter((item) => getBahanLabel(item.itemName) === "BASAH").length;
+    return { basah, kering: Math.max(0, stok.length - basah) };
+  }, [stok, category]);
 
   return (
     <div className="py-6 space-y-6">
@@ -142,6 +234,16 @@ export default function AdminDapurStokPage({ category }: { category?: "BAHAN" | 
         <div>
           <h1 className="text-2xl font-bold text-slate-900">{category === 'LAIN' ? 'Gudang Lain-lain' : 'Gudang Bahan Baku'}</h1>
           <p className="text-slate-500 text-sm">Monitor persediaan dan kelola penerimaan {category === 'LAIN' ? 'barang (packaging, gas, dll)' : 'bahan baku masakan'}.</p>
+          {category === "BAHAN" && (
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-[11px] font-bold px-2 py-1 rounded bg-cyan-100 text-cyan-800 border border-cyan-200">
+                Gudang Basah: {bahanCounts.basah}
+              </span>
+              <span className="text-[11px] font-bold px-2 py-1 rounded bg-amber-100 text-amber-800 border border-amber-200">
+                Gudang Kering: {bahanCounts.kering}
+              </span>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <button 
@@ -161,6 +263,28 @@ export default function AdminDapurStokPage({ category }: { category?: "BAHAN" | 
               className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none w-full md:w-64"
             />
           </div>
+          {category === "BAHAN" && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setBahanLabelFilter("ALL")}
+                className={`px-3 py-2 rounded-lg text-xs font-bold border ${bahanLabelFilter === "ALL" ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200"}`}
+              >
+                Semua
+              </button>
+              <button
+                onClick={() => setBahanLabelFilter("BASAH")}
+                className={`px-3 py-2 rounded-lg text-xs font-bold border ${bahanLabelFilter === "BASAH" ? "bg-cyan-600 text-white border-cyan-600" : "bg-white text-cyan-700 border-cyan-200"}`}
+              >
+                Gudang Basah
+              </button>
+              <button
+                onClick={() => setBahanLabelFilter("KERING")}
+                className={`px-3 py-2 rounded-lg text-xs font-bold border ${bahanLabelFilter === "KERING" ? "bg-amber-600 text-white border-amber-600" : "bg-white text-amber-700 border-amber-200"}`}
+              >
+                Gudang Kering
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -218,6 +342,12 @@ export default function AdminDapurStokPage({ category }: { category?: "BAHAN" | 
           >
             Riwayat Penerimaan
           </button>
+          <button
+            onClick={() => setActiveTab("opname")}
+            className={`flex-1 py-4 text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'opname' ? 'border-indigo-500 text-indigo-600 bg-indigo-50/30' : 'border-transparent text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}
+          >
+            Riwayat Stok Opname
+          </button>
         </div>
 
         {/* TAB CONTENT */}
@@ -230,14 +360,18 @@ export default function AdminDapurStokPage({ category }: { category?: "BAHAN" | 
                     <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{category === 'LAIN' ? 'Nama Barang' : 'Nama Bahan'}</th>
                     <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Kuantitas</th>
                     <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Satuan</th>
+                    {category === "BAHAN" && (
+                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Label Gudang</th>
+                    )}
                     <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Terakhir Update</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {loading ? (
-                    <tr><td colSpan={4} className="py-20 text-center text-slate-400 italic">Memuat stok...</td></tr>
+                    <tr><td colSpan={category === "BAHAN" ? 6 : 5} className="py-20 text-center text-slate-400 italic">Memuat stok...</td></tr>
                   ) : filteredStok.length === 0 ? (
-                    <tr><td colSpan={4} className="py-20 text-center text-slate-400 italic font-medium">Belum ada stok bahan tercatat.</td></tr>
+                    <tr><td colSpan={category === "BAHAN" ? 6 : 5} className="py-20 text-center text-slate-400 italic font-medium">Belum ada stok bahan tercatat.</td></tr>
                   ) : (
                     filteredStok.map((item) => (
                       <tr key={item.id} className="hover:bg-slate-50 transition-colors group">
@@ -257,8 +391,29 @@ export default function AdminDapurStokPage({ category }: { category?: "BAHAN" | 
                         <td className="px-6 py-4 text-center">
                           <span className="text-xs font-black px-2 py-1 bg-slate-100 text-slate-500 rounded uppercase">{item.unit}</span>
                         </td>
+                        {category === "BAHAN" && (
+                          <td className="px-6 py-4 text-center">
+                            {getBahanLabel(item.itemName) === "BASAH" ? (
+                              <span className="text-[10px] font-black px-2 py-1 rounded bg-cyan-100 text-cyan-800 border border-cyan-200 uppercase">
+                                Gudang Basah
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-black px-2 py-1 rounded bg-amber-100 text-amber-800 border border-amber-200 uppercase">
+                                Gudang Kering
+                              </span>
+                            )}
+                          </td>
+                        )}
                         <td className="px-6 py-4 text-right">
                           <p className="text-[10px] text-slate-400 font-bold">{new Date(item.updatedAt).toLocaleString('id-ID')}</p>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <button
+                            onClick={() => openOpnameModal(item)}
+                            className="px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg border border-indigo-200 text-indigo-700 hover:bg-indigo-50 transition-colors"
+                          >
+                            Stok Opname
+                          </button>
                         </td>
                       </tr>
                     ))
@@ -299,7 +454,7 @@ export default function AdminDapurStokPage({ category }: { category?: "BAHAN" | 
                 ))
               )}
             </div>
-          ) : (
+          ) : activeTab === "history" ? (
             <div className="p-4 space-y-4">
               {receptionHistory.length === 0 ? (
                 <div className="py-20 text-center text-slate-400 italic font-medium">Belum ada riwayat penerimaan barang.</div>
@@ -339,6 +494,48 @@ export default function AdminDapurStokPage({ category }: { category?: "BAHAN" | 
                         ))}
                      </tbody>
                    </table>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="p-4 space-y-4">
+              {opnameHistory.length === 0 ? (
+                <div className="py-20 text-center text-slate-400 italic font-medium">Belum ada riwayat stok opname.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="border-b border-slate-50">
+                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Waktu</th>
+                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Item</th>
+                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Before</th>
+                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">After</th>
+                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Selisih</th>
+                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Petugas</th>
+                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Catatan</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {opnameHistory.map((log) => (
+                        <tr key={log.id} className="hover:bg-slate-50 text-xs">
+                          <td className="px-6 py-4 font-bold text-slate-600">{new Date(log.opnameAt || log.createdAt).toLocaleString('id-ID')}</td>
+                          <td className="px-6 py-4">
+                            <span className="font-bold text-slate-800">{log.itemName}</span>
+                            <span className="ml-2 text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-500">{log.category}</span>
+                          </td>
+                          <td className="px-6 py-4 text-right font-bold text-slate-600">{log.beforeQty.toLocaleString('id-ID')} {log.unit}</td>
+                          <td className="px-6 py-4 text-right font-bold text-slate-900">{log.afterQty.toLocaleString('id-ID')} {log.unit}</td>
+                          <td className="px-6 py-4 text-right">
+                            <span className={`font-black ${log.difference >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                              {log.difference >= 0 ? '+' : ''}{log.difference.toLocaleString('id-ID')} {log.unit}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">{log.performedBy?.fullname || log.performedBy?.email || '-'}</td>
+                          <td className="px-6 py-4 italic text-slate-500">{log.note || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
@@ -527,6 +724,72 @@ export default function AdminDapurStokPage({ category }: { category?: "BAHAN" | 
                  </div>
               </div>
            </div>
+        </div>
+      )}
+
+      {/* MODAL STOK OPNAME */}
+      {opnameOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100">
+              <h3 className="text-lg font-black text-slate-900">Stok Opname Gudang</h3>
+              <button onClick={() => setOpnameOpen(false)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-500">
+                <FiX className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Nama Item</p>
+                <p className="text-sm font-bold text-slate-800">{opnameForm.itemName}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase">Stok Sistem</p>
+                  <p className="text-lg font-black text-slate-900">
+                    {opnameForm.systemQty.toLocaleString("id-ID")} <span className="text-xs font-bold text-slate-500">{opnameForm.unit}</span>
+                  </p>
+                </div>
+                <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
+                  <p className="text-[10px] font-bold text-indigo-400 uppercase">Stok Fisik</p>
+                  <input
+                    type="number"
+                    value={opnameForm.physicalQty}
+                    onChange={(e) => setOpnameForm((prev) => ({ ...prev, physicalQty: parseFloat(e.target.value) || 0 }))}
+                    className="mt-1 w-full border border-indigo-200 rounded px-2 py-1 text-sm font-bold text-indigo-700"
+                  />
+                </div>
+              </div>
+              <div className="bg-amber-50 border border-amber-100 rounded-lg p-3">
+                <p className="text-[10px] font-bold text-amber-500 uppercase mb-1">Selisih Opname</p>
+                <p className="text-sm font-black text-amber-700">
+                  {(opnameForm.physicalQty - opnameForm.systemQty) > 0 ? "+" : ""}
+                  {(opnameForm.physicalQty - opnameForm.systemQty).toLocaleString("id-ID")} {opnameForm.unit}
+                </p>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Catatan (opsional)</label>
+                <textarea
+                  rows={2}
+                  value={opnameForm.notes}
+                  onChange={(e) => setOpnameForm((prev) => ({ ...prev, notes: e.target.value }))}
+                  placeholder="Contoh: selisih karena susut penyimpanan"
+                  className="w-full border border-slate-200 rounded-lg p-2 text-sm"
+                />
+              </div>
+            </div>
+            <div className="p-5 border-t border-slate-100 flex items-center justify-end gap-3">
+              <button onClick={() => setOpnameOpen(false)} className="px-4 py-2 text-sm font-bold border border-slate-200 rounded-lg text-slate-600">
+                Batal
+              </button>
+              <button
+                onClick={submitOpname}
+                disabled={opnameSaving}
+                className="px-4 py-2 text-sm font-black rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {opnameSaving ? "Menyimpan..." : "Simpan Opname"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

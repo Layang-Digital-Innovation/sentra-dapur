@@ -57,7 +57,8 @@ export default function ProduksiDashboard() {
   const now = new Date();
 
   useEffect(() => {
-    if (user?.user.role !== "PRODUKSI") {
+    const allowedRoles = ["PRODUKSI", "AHLI_GIZI", "CHEF"];
+    if (!allowedRoles.includes(user?.user.role || "")) {
       router.replace("/dashboard");
       return;
     }

@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Role, ArusKasType, ProjectStatus, POStatus, POType, StokCategory, CashBookType, POPaymentStatus, ArusKasStatus } from '@prisma/client';
+import { Prisma, Role, ArusKasType, ProjectStatus, POStatus, POType, StokCategory, CashBookType, POPaymentStatus, ArusKasStatus } from '@prisma/client';
+import { asArusKasPoRow, asArusKasUpdate } from './arus-kas-po-workflow';
 
 @Injectable()
 export class DapurService {
@@ -22,6 +23,59 @@ export class DapurService {
       throw new ForbiddenException('You do not have access to this Dapur Unit');
     }
     return dapur;
+  }
+
+  /** Resolves the dapur unit id for ops (stok, PO loading, my-unit) including tim via shared `User.subscriptionId` → `Subscription.dapurUnitId`. */
+  private async resolveDapurUnitIdForUser(userId: string, role?: Role): Promise<string | null> {
+    if (role === Role.ADMIN_PUSAT) {
+      const unit = await this.prisma.dapurUnit.findFirst({
+        where: { adminPusatId: userId },
+        select: { id: true },
+      });
+      return unit?.id ?? null;
+    }
+    if (role === Role.PROJECT_OWNER) {
+      const unit = await this.prisma.dapurUnit.findFirst({
+        where: { projectOwnerId: userId },
+        select: { id: true },
+      });
+      return unit?.id ?? null;
+    }
+    if (role === Role.ADMIN_DAPUR) {
+      const unit = await this.prisma.dapurUnit.findFirst({
+        where: { adminDapurId: userId },
+        select: { id: true },
+      });
+      return unit?.id ?? null;
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { subscriptionId: true },
+    });
+    if (!user?.subscriptionId) return null;
+    const sub = await this.prisma.subscription.findUnique({
+      where: { id: user.subscriptionId },
+      select: { dapurUnitId: true },
+    });
+    return sub?.dapurUnitId ?? null;
+  }
+
+  /** Prisma/DB belum dimigrasi (kolom ArusKas baru) → 400 agar bukan 500 polos. */
+  private rethrowPrismaMigrationHint(err: unknown): never {
+    const pe = err as { code?: string; message?: string };
+    const m = String(pe?.message ?? err ?? '');
+    if (
+      pe?.code === 'P2022' ||
+      /\bcolumn\b.*\bdoes not exist\b/i.test(m) ||
+      (m.includes('pendingPoApproval') && /\bdoes not exist\b/i.test(m)) ||
+      (m.includes('markedForDeletion') && /\bdoes not exist\b/i.test(m)) ||
+      (m.includes('pendingEditData') && /\bdoes not exist\b/i.test(m))
+    ) {
+      throw new BadRequestException(
+        'Skema database belum diperbarui. Di server, pada folder backend, jalankan: npx prisma migrate deploy (pastikan DATABASE_URL benar).',
+      );
+    }
+    throw err;
   }
 
   private async generateReferenceNo(transactionDate: Date, tx: any = this.prisma): Promise<string> {
@@ -89,6 +143,46 @@ export class DapurService {
         status: ProjectStatus.APPROVED // approved by default if created by PO/Admin Pusat
       }
     });
+  }
+
+  async updateDapurUnit(userId: string, role: Role, dapurId: string, data: { name?: string; location?: string }) {
+    if (role !== Role.PROJECT_OWNER && role !== Role.SUPER_ADMIN && role !== Role.ADMIN_PUSAT) {
+      throw new ForbiddenException('Only PO or Admin Pusat can edit Dapur');
+    }
+    await this.checkDapurAccess(dapurId, userId, role);
+    return this.prisma.dapurUnit.update({
+      where: { id: dapurId },
+      data: {
+        name: data.name,
+        location: data.location,
+      }
+    });
+  }
+
+  async deleteDapurUnit(userId: string, role: Role, dapurId: string) {
+    if (role !== Role.PROJECT_OWNER && role !== Role.SUPER_ADMIN && role !== Role.ADMIN_PUSAT) {
+      throw new ForbiddenException('Only PO or Admin Pusat can delete Dapur');
+    }
+    await this.checkDapurAccess(dapurId, userId, role);
+
+    const hasTransactions = await this.prisma.arusKas.findFirst({ where: { dapurUnitId: dapurId } });
+    if (hasTransactions) {
+      throw new BadRequestException('Tidak bisa menghapus Dapur yang sudah memiliki transaksi Arus Kas.');
+    }
+    const hasPo = await this.prisma.purchaseOrder.findFirst({ where: { dapurUnitId: dapurId } });
+    if (hasPo) {
+      throw new BadRequestException('Tidak bisa menghapus Dapur yang sudah memiliki Purchase Order.');
+    }
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.dapurInvestor.deleteMany({ where: { dapurUnitId: dapurId } });
+        await tx.labelDapur.deleteMany({ where: { dapurUnitId: dapurId } });
+        return await tx.dapurUnit.delete({ where: { id: dapurId } });
+      });
+    } catch (error) {
+      throw new BadRequestException('Gagal menghapus Dapur. Pastikan dapur tidak terikat dengan data operasional.');
+    }
   }
 
   async assignAdminDapur(dapurId: string, userId: string, role: Role, adminDapurId: string) {
@@ -224,6 +318,7 @@ export class DapurService {
       include: {
         reportedBy: { select: { fullname: true, email: true } },
         approvedBy: { select: { fullname: true, email: true } },
+        items: true,
       },
       orderBy: { transactionDate: 'desc' }
     });
@@ -247,36 +342,292 @@ export class DapurService {
     return arusKas;
   }
 
-  async approveArusKas(adminPusatId: string, id: string) {
-    // Audit check: ensure the unit belongs to this admin or they are super?
-    // For now simple ID update
+  /** Admin Pusat mengajukan perubahan pada transaksi APPROVED; Project Owner menyetujui di endpoint approve. */
+  async adminPusatProposeArusKasEdit(
+    adminPusatId: string,
+    arusKasId: string,
+    data: {
+      type: ArusKasType;
+      bookType: CashBookType;
+      amount: number;
+      description: string;
+      referenceNo?: string;
+      evidenceUrl?: string;
+      transactionDate?: string;
+      items?: { name: string; quantity: number; unit?: string; pricePerUnit?: number; total?: number }[];
+    },
+  ) {
+    const row = asArusKasPoRow(
+      await this.prisma.arusKas.findUnique({
+        where: { id: arusKasId },
+        include: { dapurUnit: true },
+      }),
+    );
+    if (!row?.dapurUnit) throw new NotFoundException('Transaksi tidak ditemukan');
+    if (row.dapurUnit.adminPusatId !== adminPusatId) {
+      throw new ForbiddenException('Anda tidak mengelola unit dapur ini');
+    }
+    if (row.status !== ArusKasStatus.APPROVED) {
+      throw new BadRequestException('Hanya transaksi berstatus disetujui yang dapat diajukan perubahan');
+    }
+    if (row.pendingPoApproval) {
+      throw new BadRequestException('Sudah ada pengajuan yang menunggu persetujuan Project Owner');
+    }
+
+    const txDate = data.transactionDate ? new Date(data.transactionDate) : row.transactionDate;
+    const payload = {
+      type: data.type,
+      bookType: data.bookType,
+      amount: Number(data.amount),
+      description: data.description,
+      referenceNo: data.referenceNo ?? null,
+      evidenceUrl: data.evidenceUrl ?? null,
+      transactionDate: txDate.toISOString(),
+      items: data.items ?? [],
+    };
+
+    return this.prisma.arusKas.update({
+      where: { id: arusKasId },
+      data: asArusKasUpdate({
+        pendingPoApproval: true,
+        markedForDeletion: false,
+        pendingEditData: payload as unknown as Prisma.InputJsonValue,
+      }),
+      include: {
+        reportedBy: { select: { fullname: true, email: true } },
+        approvedBy: { select: { fullname: true, email: true } },
+        items: true,
+      },
+    });
+  }
+
+  async adminPusatRequestDeleteArusKas(adminPusatId: string, arusKasId: string) {
+    const row = asArusKasPoRow(
+      await this.prisma.arusKas.findUnique({
+        where: { id: arusKasId },
+        include: { dapurUnit: true },
+      }),
+    );
+    if (!row?.dapurUnit) throw new NotFoundException('Transaksi tidak ditemukan');
+    if (row.dapurUnit.adminPusatId !== adminPusatId) {
+      throw new ForbiddenException('Anda tidak mengelola unit dapur ini');
+    }
+    if (row.status !== ArusKasStatus.APPROVED) {
+      throw new BadRequestException('Hanya transaksi berstatus disetujui yang dapat diajukan penghapusan');
+    }
+    if (row.pendingPoApproval) {
+      throw new BadRequestException('Sudah ada pengajuan yang menunggu persetujuan Project Owner');
+    }
+
+    const poLink = await this.prisma.purchaseOrder.findFirst({ where: { arusKasId } });
+    if (poLink) {
+      throw new BadRequestException(
+        'Transaksi terhubung ke Purchase Order pembayaran; hapus tidak dapat diajukan.',
+      );
+    }
+
+    return this.prisma.arusKas.update({
+      where: { id: arusKasId },
+      data: asArusKasUpdate({
+        pendingPoApproval: true,
+        markedForDeletion: true,
+        pendingEditData: Prisma.JsonNull,
+      }),
+      include: {
+        reportedBy: { select: { fullname: true, email: true } },
+        approvedBy: { select: { fullname: true, email: true } },
+        items: true,
+      },
+    });
+  }
+
+  async approveArusKas(userId: string, role: Role, id: string) {
+    const row = asArusKasPoRow(
+      await this.prisma.arusKas.findUnique({
+        where: { id },
+        include: { dapurUnit: true, items: true },
+      }),
+    );
+    if (!row?.dapurUnit) throw new NotFoundException('Transaksi tidak ditemukan');
+
+    const dapur = row.dapurUnit;
+    const isSuper = role === Role.SUPER_ADMIN || role === Role.ADMIN;
+
+    // ── Pengajuan ubah/hapus oleh Admin Pusat → Project Owner (atau Super Admin)
+    if (row.pendingPoApproval) {
+      const canPo = role === Role.PROJECT_OWNER && dapur.projectOwnerId === userId;
+      if (!canPo && !isSuper) {
+        throw new ForbiddenException(
+          'Pengajuan perubahan atau penghapusan dari Admin Pusat hanya dapat disetujui oleh Project Owner',
+        );
+      }
+
+      if (row.markedForDeletion) {
+        const poLink = await this.prisma.purchaseOrder.findFirst({ where: { arusKasId: id } });
+        if (poLink) {
+          throw new BadRequestException('Transaksi masih terhubung ke PO.');
+        }
+        await this.prisma.arusKasItem.deleteMany({ where: { arusKasId: id } });
+        await this.prisma.arusKas.delete({ where: { id } });
+        return { deleted: true, id };
+      }
+
+      const raw = row.pendingEditData as Record<string, unknown> | null;
+      if (!raw || typeof raw !== 'object') {
+        throw new BadRequestException('Data pengajuan tidak valid');
+      }
+
+      const txDate =
+        typeof raw.transactionDate === 'string'
+          ? new Date(raw.transactionDate)
+          : row.transactionDate;
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.arusKasItem.deleteMany({ where: { arusKasId: id } });
+        const items = Array.isArray(raw.items) ? raw.items : [];
+        await tx.arusKas.update({
+          where: { id },
+          data: asArusKasUpdate({
+            type: raw.type as ArusKasType,
+            bookType: raw.bookType as CashBookType,
+            amount: Number(raw.amount),
+            description: String(raw.description ?? ''),
+            referenceNo:
+              raw.referenceNo === null || raw.referenceNo === undefined
+                ? null
+                : String(raw.referenceNo),
+            evidenceUrl:
+              raw.evidenceUrl === null || raw.evidenceUrl === undefined
+                ? null
+                : String(raw.evidenceUrl),
+            transactionDate: txDate,
+            status: ArusKasStatus.APPROVED,
+            approvedById: userId,
+            pendingPoApproval: false,
+            markedForDeletion: false,
+            pendingEditData: Prisma.JsonNull,
+          }),
+        });
+        if (items.length > 0) {
+          await tx.arusKasItem.createMany({
+            data: items.map((i: any) => ({
+              arusKasId: id,
+              name: String(i.name ?? ''),
+              quantity: Number(i.quantity) || 0,
+              unit: i.unit != null ? String(i.unit) : null,
+              pricePerUnit: i.pricePerUnit != null ? Number(i.pricePerUnit) : null,
+              total: i.total != null ? Number(i.total) : 0,
+            })),
+          });
+        }
+      });
+
+      return this.prisma.arusKas.findUnique({
+        where: { id },
+        include: {
+          items: true,
+          reportedBy: { select: { fullname: true, email: true } },
+          approvedBy: { select: { fullname: true, email: true } },
+        },
+      });
+    }
+
+    // ── Persetujuan awal (laporan Admin Dapur): Admin Pusat atau Project Owner
+    const isPusat = role === Role.ADMIN_PUSAT && dapur.adminPusatId === userId;
+    const isPo = role === Role.PROJECT_OWNER && dapur.projectOwnerId === userId;
+    if (!isPusat && !isPo && !isSuper) {
+      throw new ForbiddenException('Tidak berwenang menyetujui transaksi ini');
+    }
+
+    if (row.status !== ArusKasStatus.PENDING) {
+      throw new BadRequestException('Transaksi tidak dalam status menunggu persetujuan');
+    }
+
     return this.prisma.arusKas.update({
       where: { id },
       data: {
         status: ArusKasStatus.APPROVED,
-        approvedById: adminPusatId
-      }
+        approvedById: userId,
+      },
+      include: {
+        reportedBy: { select: { fullname: true, email: true } },
+        approvedBy: { select: { fullname: true, email: true } },
+        items: true,
+      },
     });
   }
 
-  async rejectArusKas(adminPusatId: string, id: string) {
+  async rejectArusKas(userId: string, role: Role, id: string) {
+    const row = asArusKasPoRow(
+      await this.prisma.arusKas.findUnique({
+        where: { id },
+        include: { dapurUnit: true },
+      }),
+    );
+    if (!row?.dapurUnit) throw new NotFoundException('Transaksi tidak ditemukan');
+
+    const dapur = row.dapurUnit;
+    const isSuper = role === Role.SUPER_ADMIN || role === Role.ADMIN;
+
+    if (row.pendingPoApproval) {
+      const canPo = role === Role.PROJECT_OWNER && dapur.projectOwnerId === userId;
+      if (!canPo && !isSuper) {
+        throw new ForbiddenException(
+          'Pengajuan dari Admin Pusat hanya dapat ditolak oleh Project Owner',
+        );
+      }
+      return this.prisma.arusKas.update({
+        where: { id },
+        data: asArusKasUpdate({
+          pendingPoApproval: false,
+          markedForDeletion: false,
+          pendingEditData: Prisma.JsonNull,
+        }),
+        include: {
+          reportedBy: { select: { fullname: true, email: true } },
+          approvedBy: { select: { fullname: true, email: true } },
+          items: true,
+        },
+      });
+    }
+
+    const isPusat = role === Role.ADMIN_PUSAT && dapur.adminPusatId === userId;
+    const isPo = role === Role.PROJECT_OWNER && dapur.projectOwnerId === userId;
+    if (!isPusat && !isPo && !isSuper) {
+      throw new ForbiddenException('Tidak berwenang menolak transaksi ini');
+    }
+
+    if (row.status !== ArusKasStatus.PENDING) {
+      throw new BadRequestException('Transaksi tidak dalam status menunggu persetujuan');
+    }
+
     return this.prisma.arusKas.update({
       where: { id },
       data: {
         status: ArusKasStatus.REJECTED,
-        approvedById: adminPusatId
-      }
+        approvedById: userId,
+      },
+      include: {
+        reportedBy: { select: { fullname: true, email: true } },
+        approvedBy: { select: { fullname: true, email: true } },
+        items: true,
+      },
     });
   }
 
   // ============================================
   // OPERATIONAL: STOK (Admin Dapur)
   // ============================================
-  async updateStok(adminDapurId: string, dapurId: string, data: { itemName: string; quantity: number; unit: string }) {
-    const dapur = await this.prisma.dapurUnit.findFirst({
-      where: { id: dapurId, adminDapurId }
-    });
-    if (!dapur) throw new ForbiddenException('You are not assigned to this Dapur Unit');
+  async updateStok(
+    adminDapurId: string,
+    dapurId: string,
+    data: { itemName: string; quantity: number; unit: string },
+    role?: Role,
+  ) {
+    const unitId = await this.resolveDapurUnitIdForUser(adminDapurId, role);
+    if (!unitId || unitId !== dapurId) {
+      throw new ForbiddenException('You are not assigned to this Dapur Unit');
+    }
 
     // Upsert mechanism based on itemName in that specific Dapur Unit
     const existingStok = await this.prisma.stok.findFirst({
@@ -320,7 +671,7 @@ export class DapurService {
       data: {
         dapurUnitId: dapurId,
         createdById: adminDapurId,
-        status: POStatus.PENDING,
+        status: POStatus.APPROVED, // Bypass approval process
         type: type,
         paymentStatus: POPaymentStatus.UNPAID,
         items: {
@@ -432,7 +783,7 @@ export class DapurService {
   async updatePurchaseOrderItems(userId: string, poId: string, items: { id: string, productName: string; quantity: number; unit?: string; supplierName?: string; pricePerUnit?: number }[]) {
      const po = await this.prisma.purchaseOrder.findUnique({ where: { id: poId } });
      if (!po) throw new NotFoundException('PO not found');
-     if (po.status !== POStatus.PENDING) throw new ForbiddenException('Cannot edit non-pending PO');
+     if (po.status !== POStatus.PENDING && po.status !== POStatus.APPROVED) throw new ForbiddenException('Cannot edit PO that is already processed or rejected');
 
      // We update the items directly
      const updatePromises = items.map(item => this.prisma.pOItem.update({
@@ -567,6 +918,7 @@ export class DapurService {
       'Insentif Ahli Gizi'
     ];
 
+    try {
     if (role === Role.ADMIN_DAPUR) {
       const units = await this.prisma.dapurUnit.findMany({
         where: { adminDapurId: userId },
@@ -685,22 +1037,15 @@ export class DapurService {
 
     // Default to empty for other roles not explicitly handled
     return [];
+    } catch (e) {
+      this.rethrowPrismaMigrationHint(e);
+    }
   }
 
   async getMyDapurUnit(userId: string, role?: Role) {
-    if (role === Role.ADMIN_PUSAT) {
-      return this.prisma.dapurUnit.findFirst({
-        where: { adminPusatId: userId }
-      });
-    }
-    if (role === Role.PROJECT_OWNER) {
-      return this.prisma.dapurUnit.findFirst({
-        where: { projectOwnerId: userId }
-      });
-    }
-    return this.prisma.dapurUnit.findFirst({
-      where: { adminDapurId: userId }
-    });
+    const unitId = await this.resolveDapurUnitIdForUser(userId, role);
+    if (!unitId) return null;
+    return this.prisma.dapurUnit.findUnique({ where: { id: unitId } });
   }
 
   async updateDapurBranding(dapurId: string, userId: string, role: Role, data: any) {
@@ -733,9 +1078,11 @@ export class DapurService {
   // LOADING GOODS / RECEIVED PO (Stok)
   // ============================================
 
-  async getPendingReceptionPOs(adminDapurId: string) {
-    // Get Dapur unit of this admin
-    const unit = await this.prisma.dapurUnit.findFirst({ where: { adminDapurId } });
+  async getPendingReceptionPOs(adminDapurId: string, role?: Role) {
+    const unitId = await this.resolveDapurUnitIdForUser(adminDapurId, role);
+    if (!unitId) return [];
+
+    const unit = await this.prisma.dapurUnit.findUnique({ where: { id: unitId } });
     if (!unit) return [];
 
     // Find POs that are ORDERED but not fully received? 
@@ -753,24 +1100,32 @@ export class DapurService {
     });
   }
 
-  async receivePurchaseOrder(adminDapurId: string, poId: string, data: {
-    notes?: string;
-    items: {
-      poItemId: string;
-      quantityReceived: number;
-      quantityRejected: number;
-      quantityReturned: number;
-      qualityCheck?: string;
+  async receivePurchaseOrder(
+    adminDapurId: string,
+    poId: string,
+    data: {
       notes?: string;
-    }[]
-  }) {
+      items: {
+        poItemId: string;
+        quantityReceived: number;
+        quantityRejected: number;
+        quantityReturned: number;
+        qualityCheck?: string;
+        notes?: string;
+      }[];
+    },
+    role?: Role,
+  ) {
     const po = await this.prisma.purchaseOrder.findUnique({
       where: { id: poId },
       include: { dapurUnit: true, items: true }
     });
 
     if (!po) throw new NotFoundException('Purchase Order not found');
-    if (po.dapurUnit.adminDapurId !== adminDapurId) throw new ForbiddenException('Not your Dapur PO');
+    const unitId = await this.resolveDapurUnitIdForUser(adminDapurId, role);
+    if (!unitId || unitId !== po.dapurUnitId) {
+      throw new ForbiddenException('Not your Dapur PO');
+    }
     if (po.status !== POStatus.ORDERED && po.status !== POStatus.DELIVERED) {
       throw new BadRequestException('PO must be in ORDERED state to receive it');
     }
@@ -864,25 +1219,115 @@ export class DapurService {
     });
   }
 
-  async getStok(adminDapurId: string, category?: string) {
-    const unit = await this.prisma.dapurUnit.findFirst({ where: { adminDapurId } });
-    if (!unit) return [];
-    
+  async getStok(adminDapurId: string, category?: string, role?: Role) {
+    const unitId = await this.resolveDapurUnitIdForUser(adminDapurId, role);
+    if (!unitId) return [];
+
     return this.prisma.stok.findMany({
       where: { 
-        dapurUnitId: unit.id,
+        dapurUnitId: unitId,
         ...(category && { category: category as any })
       },
       orderBy: { itemName: 'asc' }
     });
   }
 
-  async getLoadingGoodsHistory(adminDapurId: string) {
-    const unit = await this.prisma.dapurUnit.findFirst({ where: { adminDapurId } });
-    if (!unit) return [];
+  async createStokOpname(
+    adminDapurId: string,
+    dapurId: string,
+    data: {
+      itemName: string;
+      unit: string;
+      category?: 'BAHAN' | 'LAIN';
+      physicalQty: number;
+      note?: string;
+    },
+    role?: Role,
+  ) {
+    const unitId = await this.resolveDapurUnitIdForUser(adminDapurId, role);
+    if (!unitId || unitId !== dapurId) {
+      throw new ForbiddenException('You are not assigned to this Dapur Unit');
+    }
+
+    const category = (data.category as StokCategory) || StokCategory.BAHAN;
+    const existingStok = await this.prisma.stok.findFirst({
+      where: { dapurUnitId: dapurId, itemName: data.itemName, category }
+    });
+
+    const beforeQty = existingStok?.quantity || 0;
+    const afterQty = Number(data.physicalQty) || 0;
+    const difference = afterQty - beforeQty;
+
+    return this.prisma.$transaction(async (tx) => {
+      let updatedStok;
+      if (existingStok) {
+        updatedStok = await tx.stok.update({
+          where: { id: existingStok.id },
+          data: {
+            quantity: afterQty,
+            unit: data.unit || existingStok.unit,
+            lastUpdatedById: adminDapurId
+          }
+        });
+      } else {
+        updatedStok = await tx.stok.create({
+          data: {
+            dapurUnitId: dapurId,
+            itemName: data.itemName,
+            quantity: afterQty,
+            unit: data.unit,
+            category,
+            lastUpdatedById: adminDapurId
+          }
+        });
+      }
+
+      const log = await (tx as any).stokOpnameLog.create({
+        data: {
+          dapurUnitId: dapurId,
+          stokId: updatedStok.id,
+          itemName: data.itemName,
+          unit: updatedStok.unit,
+          category,
+          beforeQty,
+          afterQty,
+          difference,
+          note: data.note || null,
+          performedById: adminDapurId,
+          opnameAt: new Date(),
+        },
+        include: {
+          performedBy: { select: { id: true, fullname: true, email: true } }
+        }
+      });
+
+      return { stok: updatedStok, log };
+    });
+  }
+
+  async getStokOpnameHistory(adminDapurId: string, category?: string, role?: Role) {
+    const unitId = await this.resolveDapurUnitIdForUser(adminDapurId, role);
+    if (!unitId) return [];
+
+    return (this.prisma as any).stokOpnameLog.findMany({
+      where: {
+        dapurUnitId: unitId,
+        ...(category ? { category: category as StokCategory } : {})
+      },
+      include: {
+        performedBy: { select: { id: true, fullname: true, email: true } },
+        stok: { select: { id: true, quantity: true, unit: true, itemName: true } },
+      },
+      orderBy: { opnameAt: 'desc' }
+    });
+  }
+
+  async getLoadingGoodsHistory(adminDapurId: string, role?: Role) {
+    const unitId = await this.resolveDapurUnitIdForUser(adminDapurId, role);
+    if (!unitId) return [];
 
     return this.prisma.loadingGood.findMany({
-      where: { purchaseOrder: { dapurUnitId: unit.id } },
+      where: { purchaseOrder: { dapurUnitId: unitId } },
       include: {
         purchaseOrder: true,
         items: { include: { poItem: true } },
@@ -1031,6 +1476,108 @@ export class DapurService {
         purchaseOrder: { select: { id: true, createdAt: true } },
       },
       orderBy: { transactionDate: 'desc' },
+    });
+  }
+  // ============================================
+  // LABA RUGI (PROFIT & LOSS)
+  // ============================================
+
+  async calculateLabaRugi(role: Role, dapurId: string, period: string) {
+    if (role !== Role.ADMIN_PUSAT && role !== Role.SUPER_ADMIN && role !== Role.PROJECT_OWNER) {
+      throw new ForbiddenException('Akses ditolak: Hanya Admin Pusat yang bisa kalkulasi Laba Rugi');
+    }
+    
+    // period format: YYYY-MM
+    const [yearStr, monthStr] = period.split('-');
+    const year = parseInt(yearStr);
+    const month = parseInt(monthStr);
+
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 1); // 1st day of next month
+
+    const arusKasList = await this.prisma.arusKas.findMany({
+      where: {
+        dapurUnitId: dapurId,
+        status: 'APPROVED', // Only calculate approved transactions
+        transactionDate: {
+          gte: startDate,
+          lt: endDate,
+        }
+      }
+    });
+
+    let totalIncome = 0;
+    let totalExpense = 0;
+
+    for (const ak of arusKasList) {
+      if (ak.type === 'IN') {
+        totalIncome += ak.amount;
+      } else if (ak.type === 'OUT') {
+        totalExpense += ak.amount;
+      }
+    }
+
+    const netProfit = totalIncome - totalExpense;
+
+    // @ts-ignore
+    const existing = await this.prisma.dapurLabaRugi.findUnique({
+      where: {
+        dapurUnitId_period: {
+          dapurUnitId: dapurId,
+          period: period
+        }
+      }
+    });
+
+    return {
+      dapurId,
+      period,
+      totalIncome,
+      totalExpense,
+      netProfit,
+      isPublished: !!existing,
+      publishedAt: existing?.publishedAt,
+      report: existing
+    };
+  }
+
+  async publishLabaRugi(userId: string, role: Role, dapurId: string, period: string) {
+    if (role !== Role.ADMIN_PUSAT && role !== Role.SUPER_ADMIN) {
+      throw new ForbiddenException('Akses ditolak: Hanya Admin Pusat yang bisa publish Laba Rugi');
+    }
+
+    // Recalculate to get latest numbers
+    const calc = await this.calculateLabaRugi(role, dapurId, period);
+
+    if (calc.isPublished) {
+      throw new BadRequestException('Laba Rugi untuk periode ini sudah dipublish');
+    }
+
+    // @ts-ignore
+    return this.prisma.dapurLabaRugi.create({
+      data: {
+        dapurUnitId: dapurId,
+        period: period,
+        totalIncome: calc.totalIncome,
+        totalExpense: calc.totalExpense,
+        netProfit: calc.netProfit,
+        status: 'PUBLISHED',
+        publishedById: userId
+      }
+    });
+  }
+
+  async getPublishedLabaRugi(role: Role, dapurId: string) {
+    // @ts-ignore
+    return this.prisma.dapurLabaRugi.findMany({
+      where: {
+        dapurUnitId: dapurId,
+        status: 'PUBLISHED'
+      },
+      include: {
+        publishedBy: { select: { fullname: true, email: true } }
+      },
+      orderBy: { period: 'desc' }
     });
   }
 }
